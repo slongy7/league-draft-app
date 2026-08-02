@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>League of Pretty Ordinary Gentlemen — League Draft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0e1116; --bg-2:#0a0c10; --panel:#161a21; --panel-2:#1c212a; --line:#272e39;
+  --turf:#3ea373; --turf-dim:#2a6b4d; --amber:#e8a33d; --amber-dim:#a3762b;
+  --steel:#7c98bf; --text:#eceae1; --muted:#8b93a1; --muted-2:#5c6472; --red:#d96b5e;
+  --pos-qb:#7c98bf; --pos-rb:#3ea373; --pos-wr:#e8a33d; --pos-te:#b088d8; --pos-dst:#8b93a1; --pos-k:#5cc7c0;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(62,163,115,0.08), transparent 60%), var(--bg);
+  color:var(--text); font-family:'Inter',sans-serif; min-height:100vh;
+}
+.mono{font-family:'JetBrains Mono',monospace;}
+#app{max-width:1400px;margin:0 auto;padding:20px 20px 60px;}
+
+.topbar{display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid var(--line);padding-bottom:14px;margin-bottom:22px;flex-wrap:wrap;gap:10px;}
+.brand{display:flex;align-items:baseline;gap:12px;}
+.brand .mark{font-family:'Teko',sans-serif;font-weight:700;font-size:28px;letter-spacing:0.3px;color:var(--text);line-height:1.05;max-width:520px;}
+.brand .mark span{color:var(--turf);}
+.brand .sub{color:var(--muted);font-size:12.5px;letter-spacing:1.5px;text-transform:uppercase;font-weight:600;}
+.topbar-right{display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted);}
+.you-tag{font-family:'JetBrains Mono',monospace;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:4px 10px;color:var(--turf);}
+
+button{font-family:'Inter',sans-serif;cursor:pointer;border:none;border-radius:8px;font-weight:600;transition:transform .08s ease, background .15s ease, opacity .15s ease;}
+button:active{transform:scale(0.97);}
+button:disabled{opacity:.4;cursor:not-allowed;}
+.btn-primary{background:var(--turf);color:#08130d;padding:12px 22px;font-size:15px;}
+.btn-primary:hover:not(:disabled){background:#4bb883;}
+.btn-secondary{background:transparent;color:var(--text);border:1.5px solid var(--line);padding:10px 18px;font-size:14px;}
+.btn-secondary:hover:not(:disabled){border-color:var(--steel);color:var(--steel);}
+.btn-ghost{background:transparent;color:var(--muted);padding:6px 10px;font-size:12.5px;border:1px solid var(--line);}
+.btn-ghost:hover:not(:disabled){color:var(--text);border-color:var(--muted-2);}
+.btn-danger{background:transparent;color:var(--red);border:1.5px solid #5c332e;padding:8px 14px;font-size:13px;}
+.btn-danger:hover:not(:disabled){background:rgba(217,107,94,0.12);}
+select,input[type=text],input[type=number]{
+  background:var(--panel-2);border:1.5px solid var(--line);color:var(--text);border-radius:7px;padding:9px 12px;font-family:'Inter',sans-serif;font-size:14px;
+}
+select:focus,input:focus{outline:none;border-color:var(--turf);}
+select:disabled,input:disabled{opacity:0.4;cursor:not-allowed;}
+
+.screen{display:none;}
+.screen.active{display:block;}
+
+/* ---------- loading ---------- */
+#screenLoading{text-align:center;padding:100px 20px;color:var(--muted);}
+#screenLoading .spin{
+  width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--turf);
+  margin:0 auto 16px;animation:spin 0.9s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ---------- setup ---------- */
+#screenSetup{max-width:760px;margin:20px auto;}
+.hero{margin-bottom:30px;}
+.hero .eyebrow{color:var(--turf);font-size:12.5px;letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:8px;}
+.hero h1{font-family:'Teko',sans-serif;font-weight:600;font-size:50px;line-height:0.98;margin:0 0 12px;letter-spacing:0.3px;}
+.hero p{color:var(--muted);font-size:15px;line-height:1.6;max-width:580px;margin:0;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px;margin-bottom:16px;}
+.card h3{font-family:'Teko',sans-serif;font-size:22px;font-weight:600;margin:0 0 14px;letter-spacing:0.3px;}
+.field{display:flex;flex-direction:column;gap:8px;margin-bottom:16px;}
+.field label{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700;}
+.field select,.field input{width:100%;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.row-roster{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
+@media(max-width:700px){.row-roster{grid-template-columns:repeat(3,1fr);} .row2{grid-template-columns:1fr;}}
+.roster-mini label{font-size:10.5px;}
+.team-name-list{display:flex;flex-direction:column;gap:8px;}
+.team-name-row{display:flex;align-items:center;gap:10px;}
+.team-name-row .idx{font-family:'JetBrains Mono',monospace;color:var(--muted-2);width:26px;text-align:right;font-size:13px;}
+.team-name-row input{flex:1;}
+.checkline{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text);margin-top:4px;}
+.checkline input{width:16px;height:16px;}
+.setup-actions{display:flex;justify-content:flex-end;gap:10px;}
+
+/* ---------- lobby ---------- */
+#screenLobby{max-width:900px;margin:20px auto;}
+.lobby-name{display:flex;gap:10px;align-items:flex-end;margin-bottom:22px;flex-wrap:wrap;}
+.lobby-name .field{margin:0;flex:1;min-width:220px;}
+.team-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;}
+.team-card2{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;}
+.team-card2.mine{border-color:var(--turf);box-shadow:0 0 0 1px var(--turf) inset;}
+.team-card2 .tname{font-family:'Teko',sans-serif;font-size:22px;font-weight:600;}
+.claim-status{font-size:12px;color:var(--muted);}
+.claim-status.taken{color:var(--amber);}
+.claim-status.mine{color:var(--turf);font-weight:700;}
+.lobby-enter{display:flex;justify-content:space-between;align-items:center;margin-top:26px;flex-wrap:wrap;gap:12px;}
+.lobby-enter .hint{color:var(--muted);font-size:13px;}
+
+.order-row{
+  display:flex;align-items:center;gap:12px;padding:9px 10px;border-bottom:1px solid #1d222b;
+}
+.order-row:last-child{border-bottom:none;}
+.order-row .opos{
+  font-family:'JetBrains Mono',monospace;color:var(--muted-2);width:26px;text-align:right;font-size:13px;flex-shrink:0;
+}
+.order-row .oname{flex:1;font-size:14px;font-weight:600;}
+.order-row .obadge{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.order-row .obtns{display:flex;gap:4px;}
+.order-row .obtns button{
+  width:26px;height:26px;padding:0;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);
+  border-radius:5px;font-size:12px;line-height:1;
+}
+.order-row .obtns button:hover:not(:disabled){color:var(--text);border-color:var(--muted-2);}
+
+.kx-row{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;border-bottom:1px solid #1d222b;font-size:13px;
+}
+.kx-row:last-child{border-bottom:none;}
+.kx-row .kx-main{flex:1;}
+.kx-row .kx-tag{
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:5px;padding:2px 7px;
+}
+.kx-row .kx-remove{
+  background:transparent;border:1px solid #5c332e;color:var(--red);padding:4px 10px;font-size:11.5px;border-radius:6px;
+}
+.kx-empty{color:var(--muted-2);font-size:13px;font-style:italic;padding:6px 0;}
+.card.disabled{opacity:0.55;}
+
+/* ---------- clock ---------- */
+.clock-bar{display:flex;align-items:center;gap:18px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 20px;margin-bottom:16px;flex-wrap:wrap;}
+.clock-pick{font-family:'Teko',sans-serif;font-size:40px;line-height:0.9;color:var(--text);font-weight:600;min-width:70px;}
+.clock-pick sup{font-size:15px;color:var(--muted);font-weight:400;}
+.clock-info{flex:1;min-width:180px;}
+.clock-info .who{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--amber);display:inline-block;animation:pulse 1.1s infinite;}
+.dot.you{background:var(--turf);}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+.clock-info .meta{font-size:12.5px;color:var(--muted);margin-top:2px;}
+.upnext{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted-2);flex-wrap:wrap;}
+.upnext .tag{font-family:'JetBrains Mono',monospace;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:3px 7px;color:var(--steel);}
+.clock-actions{display:flex;gap:8px;}
+
+.layout{display:grid;grid-template-columns:2.1fr 1fr;gap:16px;align-items:start;}
+@media(max-width:980px){.layout{grid-template-columns:1fr;}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.panel-head{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.panel-head h2{font-family:'Teko',sans-serif;font-weight:600;font-size:22px;margin:0;letter-spacing:0.3px;}
+.panel-body{padding:16px 18px;}
+.pos-tabs{display:flex;gap:6px;flex-wrap:wrap;}
+.pos-tab{font-size:12px;font-weight:700;padding:6px 11px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;font-family:'JetBrains Mono',monospace;}
+.pos-tab.active{background:var(--turf);color:#08130d;border-color:var(--turf);}
+.search-wrap{display:flex;gap:8px;padding:0 18px 14px;}
+.search-wrap input{flex:1;}
+table.plist{width:100%;border-collapse:collapse;font-size:13.5px;}
+table.plist thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--muted-2);padding:8px 10px;border-bottom:1px solid var(--line);font-weight:700;position:sticky;top:0;background:var(--panel);}
+table.plist tbody tr{border-bottom:1px solid #1d222b;}
+table.plist tbody tr:hover{background:var(--panel-2);}
+table.plist td{padding:9px 10px;vertical-align:middle;}
+.pos-pill{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;color:#08130d;display:inline-block;min-width:30px;text-align:center;}
+.pname{font-weight:600;}
+.pmeta{color:var(--muted);font-size:12px;}
+.adp-num{font-family:'JetBrains Mono',monospace;color:var(--muted);}
+.list-scroll{max-height:560px;overflow-y:auto;}
+.btn-draft{background:var(--panel-2);border:1px solid var(--turf-dim);color:var(--turf);padding:5px 12px;font-size:12px;border-radius:6px;font-weight:700;}
+.btn-draft:hover:not(:disabled){background:var(--turf);color:#08130d;}
+
+.roster-switch{display:flex;align-items:center;gap:8px;}
+.roster-switch select{font-size:12.5px;padding:6px 9px;}
+.roster-slot{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #1d222b;}
+.roster-slot:last-child{border-bottom:none;}
+.slot-tag{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--muted-2);width:44px;flex-shrink:0;}
+.slot-player{flex:1;font-size:13.5px;}
+.slot-player .empty{color:var(--muted-2);font-style:italic;}
+.slot-player .pname{display:block;}
+.slot-player .pmeta{font-size:11.5px;}
+
+.board-wrap{overflow-x:auto;}
+table.board{border-collapse:collapse;width:100%;}
+table.board th{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--panel);text-align:left;}
+table.board th.you{color:var(--turf);}
+table.board td{border:1px solid #1a1f27;padding:6px 8px;min-width:100px;font-size:11.5px;vertical-align:top;}
+table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);text-align:center;min-width:34px;background:var(--panel-2);}
+.cell-pick{border-radius:5px;padding:5px 7px;}
+.cell-pick .pp{font-weight:700;font-size:12px;}
+.cell-pick .pt{font-size:10.5px;color:var(--muted);}
+.cell-empty{color:var(--muted-2);text-align:center;}
+.cell-onclock{outline:2px solid var(--amber);border-radius:6px;}
+.legend{display:flex;flex-wrap:wrap;gap:10px;padding:12px 18px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);}
+.legend .sw{display:inline-flex;align-items:center;gap:5px;}
+.legend .dotsm{width:8px;height:8px;border-radius:2px;display:inline-block;}
+
+.toast{
+  position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+  background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+  padding:11px 20px;border-radius:9px;font-size:13.5px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;z-index:50;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+
+/* ---------- results ---------- */
+#screenResults{}
+.results-hero{text-align:center;margin:26px 0 30px;}
+.results-hero .eyebrow{color:var(--turf);font-size:12.5px;letter-spacing:2px;text-transform:uppercase;font-weight:700;}
+.results-hero h1{font-family:'Teko',sans-serif;font-size:52px;font-weight:600;margin:6px 0;}
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+.team-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;}
+.team-card.you{border-color:var(--turf);box-shadow:0 0 0 1px var(--turf) inset;}
+.team-card h3{font-family:'Teko',sans-serif;font-size:22px;margin:0 0 10px;font-weight:600;display:flex;justify-content:space-between;align-items:center;}
+.team-card h3 .you-badge{font-family:'Inter';font-size:10px;background:var(--turf);color:#08130d;padding:2px 7px;border-radius:4px;letter-spacing:0.5px;}
+.team-roster-line{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid #1d222b;}
+.team-roster-line:last-child{border-bottom:none;}
+.team-roster-line .tslot{color:var(--muted-2);font-family:'JetBrains Mono',monospace;font-size:10.5px;width:38px;flex-shrink:0;}
+.team-roster-line .tname{flex:1;}
+.results-actions{display:flex;justify-content:center;gap:12px;margin:30px 0 10px;flex-wrap:wrap;}
+
+.footer-links{display:flex;justify-content:center;gap:16px;margin-top:30px;}
+
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:var(--bg-2);}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;}
+::-webkit-scrollbar-thumb:hover{background:var(--muted-2);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">LEAGUE OF PRETTY ORDINARY <span>GENTLEMEN</span></div>
+      <div class="sub">Live League Draft · 2026 Season Player Pool</div>
+    </div>
+    <div class="topbar-right" id="topbarStatus"></div>
+  </div>
+
+  <!-- LOADING -->
+  <div class="screen active" id="screenLoading">
+    <div class="spin"></div>
+    <div>Connecting to the draft room…</div>
+  </div>
+
+  <!-- SETUP (commissioner, only shown if no room exists yet) -->
+  <div class="screen" id="screenSetup">
+    <div class="hero">
+      <div class="eyebrow">Commissioner Setup</div>
+      <h1>Build the room.</h1>
+      <p>Set up your league once — teams, roster spots, draft order. Then share this exact link with everyone in your league. Each person opens it, claims their team, and drafts live from their own device.</p>
+    </div>
+
+    <div id="storageWarning" style="display:none;background:rgba(217,107,94,0.1);border:1px solid #5c332e;color:var(--red);border-radius:10px;padding:14px 18px;font-size:13.5px;margin-bottom:18px;">
+      ⚠️ This page can't reach Claude's shared storage right now, so a room can't be created. This app needs to be open as a live Claude artifact (in the Claude app or claude.ai) — it won't work if the HTML file is downloaded and opened directly in a browser. Try reopening it from the conversation.
+    </div>
+
+    <div class="card">
+      <h3>League</h3>
+      <div class="row2">
+        <div class="field">
+          <label for="setupNumTeams">Number of teams</label>
+          <select id="setupNumTeams">
+            <option value="6">6</option><option value="8">8</option>
+            <option value="10" selected>10</option><option value="12">12</option>
+            <option value="14">14</option><option value="16">16</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="checkline" style="margin-top:26px;">
+            <input type="checkbox" id="setupRandomize" checked> Randomize round-1 draft order
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Team names</label>
+        <div class="team-name-list" id="teamNameList"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Roster format</h3>
+      <div class="row-roster" id="rosterConfig"></div>
+      <label class="checkline"><input type="checkbox" id="cfgDST" checked> Include D/ST slot</label>
+      <label class="checkline"><input type="checkbox" id="cfgK" checked> Include Kicker slot</label>
+    </div>
+
+    <div class="setup-actions">
+      <button class="btn-primary" id="createRoomBtn">Create draft room →</button>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+  <div class="screen" id="screenLobby">
+    <div class="hero">
+      <div class="eyebrow">League Lobby</div>
+      <h1 id="lobbyLeagueTitle">Claim your team.</h1>
+      <p>Enter your name and tap the team you manage. Everyone drafting tonight should do this from their own device before you enter the room.</p>
+    </div>
+    <div class="lobby-name">
+      <div class="field">
+        <label for="managerName">Your name</label>
+        <input type="text" id="managerName" placeholder="e.g. Alex">
+      </div>
+    </div>
+
+    <div class="card" id="commishCard" style="padding:16px 20px;margin-bottom:8px;">
+      <div id="commishStatus" style="font-size:13.5px;"></div>
+    </div>
+    <div class="team-cards" id="teamCards"></div>
+
+    <div class="card" style="margin-top:22px;">
+      <h3>Draft order</h3>
+      <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
+        Reorder teams however you like — shuffle it, or nudge teams up and down manually. Round 1 goes top to bottom, then it snakes back. Changes apply starting from the next pick; picks already made won't move.
+      </p>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <button class="btn-secondary" id="shuffleOrderBtn">🔀 Shuffle randomly</button>
+        <button class="btn-ghost" id="resetOrderBtn">Reset to team list order</button>
+      </div>
+      <div id="orderList"></div>
+    </div>
+
+    <div class="card" id="keeperCard" style="margin-top:22px;">
+      <h3>Keepers</h3>
+      <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
+        Assign a keeper to a team before the draft starts. The player comes off the board, fills a roster spot, and that team's pick in the round you choose is removed from the live draft.
+      </p>
+      <div id="keeperLocked" style="display:none;color:var(--amber);font-size:13px;margin-bottom:10px;">
+        🔒 Keepers are locked once the draft has started. Reset picks in the draft room to make changes.
+      </div>
+      <div id="keeperForm" class="row2" style="align-items:end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Team</label>
+          <select id="keeperTeam"></select>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Player</label>
+          <input type="text" id="keeperPlayerSearch" placeholder="Search players…" style="margin-bottom:8px;">
+          <select id="keeperPlayer" size="6" style="width:100%;"></select>
+        </div>
+      </div>
+      <div class="row2" style="margin-top:14px;align-items:end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Counts as round</label>
+          <select id="keeperRound"></select>
+        </div>
+        <div>
+          <button class="btn-secondary" id="addKeeperBtn" style="width:100%;">+ Add keeper</button>
+        </div>
+      </div>
+      <div id="keeperList" style="margin-top:16px;"></div>
+    </div>
+
+    <div class="card" id="skipCard" style="margin-top:22px;">
+      <h3>Pick restrictions</h3>
+      <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
+        Block a team from picking in a specific round — for a forfeited pick, a punishment, or any house rule. That slot is skipped entirely in the live draft.
+      </p>
+      <div id="skipLocked" style="display:none;color:var(--amber);font-size:13px;margin-bottom:10px;">
+        🔒 Pick restrictions are locked once the draft has started. Reset picks in the draft room to make changes.
+      </div>
+      <div id="skipForm" class="row2" style="align-items:end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Team</label>
+          <select id="skipTeam"></select>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Round</label>
+          <select id="skipRound"></select>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn-secondary" id="addSkipBtn">🚫 Block this pick</button>
+      </div>
+      <div id="skipList" style="margin-top:16px;"></div>
+    </div>
+
+    <div class="lobby-enter">
+      <div class="hint" id="lobbyHint"></div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-danger" id="resetRoomBtn">Reset entire room</button>
+        <button class="btn-primary" id="enterRoomBtn">Enter draft room →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DRAFT -->
+  <div class="screen" id="screenDraft">
+    <div class="clock-bar">
+      <div class="clock-pick"><span id="clockOverall">1</span><sup id="clockRound">RD 1</sup></div>
+      <div class="clock-info">
+        <div class="who"><span class="dot" id="clockDot"></span><span id="clockTeam">—</span></div>
+        <div class="meta" id="clockMeta">on the clock</div>
+      </div>
+      <div class="upnext" id="upNext"></div>
+      <div class="clock-actions">
+        <button class="btn-ghost" id="backToLobbyBtn">← Lobby</button>
+        <button class="btn-ghost" id="refreshBtn">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Available players</h2>
+          <div class="pos-tabs" id="posTabs"></div>
+        </div>
+        <div class="search-wrap"><input type="text" id="searchBox" placeholder="Search players…"></div>
+        <div class="list-scroll">
+          <table class="plist">
+            <thead><tr><th>ADP</th><th>Pos</th><th>Player</th><th>Bye</th><th></th></tr></thead>
+            <tbody id="plistBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Roster</h2>
+            <div class="roster-switch"><select id="rosterTeamSelect"></select></div>
+          </div>
+          <div class="panel-body" id="rosterBody"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <div class="panel-head"><h2>Draft board</h2>
+        <button class="btn-danger" id="resetPicksBtn">Reset picks</button>
+      </div>
+      <div class="board-wrap"><table class="board" id="boardTable"></table></div>
+      <div class="legend">
+        <span class="sw"><span class="dotsm" style="background:var(--pos-qb)"></span>QB</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-rb)"></span>RB</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-wr)"></span>WR</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-te)"></span>TE</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-dst)"></span>D/ST</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-k)"></span>K</span>
+        <span class="sw"><span class="dotsm" style="background:var(--amber)"></span>Keeper</span>
+        <span class="sw"><span class="dotsm" style="background:var(--red)"></span>Skipped pick</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="screen" id="screenResults">
+    <div class="results-hero">
+      <div class="eyebrow">Draft Complete</div>
+      <h1>That's a wrap.</h1>
+    </div>
+    <div class="teams-grid" id="teamsGrid"></div>
+    <div class="results-actions">
+      <button class="btn-secondary" id="downloadBtn">Download results (.txt)</button>
+      <button class="btn-danger" id="resetFromResultsBtn">Start a new draft</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+const PLAYERS_RAW = __PLAYERS_JSON__;
+</script>
+<script src="app.js"></script>
+</body>
+</html>
