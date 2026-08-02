@@ -78,6 +78,24 @@ above. Vercel auto-detects both `public/` (served as the static site root) and
    (`?room=ABC123`) the first time anyone opens the site — share that exact
    link with your league the same way you'd share a Claude artifact link.
 
+## Also hosted on GitHub Pages
+
+`src/app.js` calls the Vercel API by its absolute URL (`API_BASE` near the top
+of the storage-helpers section), not a relative path — so the exact same built
+`public/` output can be served from anywhere and it'll still talk to the one
+live backend/Redis instance on Vercel. `api/storage.js` sends permissive CORS
+headers to allow that (it's a public, unauthenticated, allowlisted endpoint
+either way, so this doesn't weaken it).
+
+`.github/workflows/pages.yml` rebuilds `public/` from `src/` and deploys it to
+GitHub Pages on every push to `master` (or via manual "Run workflow"). Enable
+it once per repo: **Settings → Pages → Build and deployment → Source: GitHub
+Actions**.
+
+If you ever repoint `API_BASE` at a different backend deployment, rebuild
+(`python3 build.py`) before pushing so both `public/` and `dist/` pick up the
+change.
+
 ## Data
 
 `src/players.json` holds the 2026 season player pool compiled from consensus

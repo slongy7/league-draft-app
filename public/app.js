@@ -61,6 +61,11 @@ function getRoomCode(){
 
 const ROOM_CODE = getRoomCode();
 
+// Absolute so this same app.js works whether it's served from the Vercel
+// backend itself or from a separate static host (e.g. GitHub Pages) — either
+// way it talks to the one live api/storage.js + Redis instance.
+const API_BASE = 'https://league-draft-app.vercel.app';
+
 /* ---------------- storage helpers ----------------
    Shared keys (league_config/league_draft) sync everyone in the room via the
    /api/storage backend. Private keys (identity, commissioner token) never
@@ -72,7 +77,7 @@ async function storageGet(key, shared){
       const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : null;
     }
-    const res = await fetch(`/api/storage?room=${ROOM_CODE}&key=${key}`);
+    const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`);
     if(!res.ok) return null;
     const data = await res.json();
     return data.value ? JSON.parse(data.value) : null;
@@ -84,7 +89,7 @@ async function storageSet(key, value, shared){
       localStorage.setItem(key, JSON.stringify(value));
       return {ok:true};
     }
-    const res = await fetch(`/api/storage?room=${ROOM_CODE}&key=${key}`, {
+    const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({value: JSON.stringify(value)}),
@@ -102,13 +107,13 @@ async function storageSet(key, value, shared){
 async function storageDelete(key, shared){
   try{
     if(!shared){ localStorage.removeItem(key); return; }
-    await fetch(`/api/storage?room=${ROOM_CODE}&key=${key}`, {method:'DELETE'});
+    await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`, {method:'DELETE'});
   }catch(e){ /* ignore missing key */ }
 }
 
 async function backendReachable(){
   try{
-    const res = await fetch(`/api/storage?room=${ROOM_CODE}&key=${CFG_KEY}`);
+    const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${CFG_KEY}`);
     return res.status < 500;
   }catch(e){ return false; }
 }

@@ -27,6 +27,17 @@ async function redisCommand(command) {
 }
 
 module.exports = async function handler(req, res) {
+  // Public, unauthenticated, validated-by-room-code+key-allowlist endpoint —
+  // safe to open up to any origin (e.g. a GitHub Pages-hosted frontend)
+  // since there are no cookies/credentials involved.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   try {
     const { room, key } = req.query;
     if (typeof room !== 'string' || !ROOM_RE.test(room)) {
