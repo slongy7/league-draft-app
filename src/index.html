@@ -247,7 +247,7 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
     </div>
 
     <div id="storageWarning" style="display:none;background:rgba(217,107,94,0.1);border:1px solid #5c332e;color:var(--red);border-radius:10px;padding:14px 18px;font-size:13.5px;margin-bottom:18px;">
-      ⚠️ This page can't reach Claude's shared storage right now, so a room can't be created. This app needs to be open as a live Claude artifact (in the Claude app or claude.ai) — it won't work if the HTML file is downloaded and opened directly in a browser. Try reopening it from the conversation.
+      ⚠️ This page can't reach the draft server right now, so a room can't be created. Try refreshing — if it keeps happening, the site may be temporarily down.
     </div>
 
     <div class="card">
@@ -291,6 +291,10 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       <div class="eyebrow">League Lobby</div>
       <h1 id="lobbyLeagueTitle">Claim your team.</h1>
       <p>Enter your name and tap the team you manage. Everyone drafting tonight should do this from their own device before you enter the room.</p>
+    </div>
+    <div class="card" style="padding:14px 20px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+      <div style="font-size:13.5px;color:var(--muted);">Share this link with your league — anyone who opens it joins this same draft room.</div>
+      <button class="btn-secondary" id="copyInviteBtn">🔗 Copy invite link</button>
     </div>
     <div class="lobby-name">
       <div class="field">
