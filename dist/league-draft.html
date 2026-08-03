@@ -841,13 +841,17 @@ function buildSetupForm(){
   renderTeamNameInputs(10);
   renderMockSlotOptions(10);
   document.getElementById('setupNumTeams').value = '10';
-  document.getElementById('setupNumTeams').addEventListener('change', (e)=>{
-    const n = parseInt(e.target.value,10);
-    renderTeamNameInputs(n);
-    renderMockSlotOptions(n);
-  });
   buildRosterConfigInputs();
 }
+
+// Attached once (not inside buildSetupForm, which reruns every time the
+// setup screen is (re)entered) so teams/slot options never fall out of sync
+// with the selected count, and so listeners don't pile up across visits.
+document.getElementById('setupNumTeams').addEventListener('change', (e)=>{
+  const n = parseInt(e.target.value,10);
+  renderTeamNameInputs(n);
+  renderMockSlotOptions(n);
+});
 
 function ordinalSuffix(n){
   const s = ['th','st','nd','rd'], v = n % 100;
@@ -1434,6 +1438,7 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
       numTeamsSel.value = String(n);
     }
     renderTeamNameInputs(n);
+    renderMockSlotOptions(n);
     const inputs = [...document.querySelectorAll('#teamNameList input')];
     data.teams.slice(0,n).forEach((t,i)=>{ if(inputs[i]) inputs[i].value = t.name; });
 
