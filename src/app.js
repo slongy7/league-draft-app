@@ -900,7 +900,8 @@ function renderOrderList(){
   const noteHtml = canEdit ? '' : `<div class="kx-empty" style="margin-bottom:8px;">Only the commissioner can reorder teams.</div>`;
   wrap.innerHTML = noteHtml + base.map((teamIdx,pos)=>{
     const claim = DRAFT.claims[teamIdx];
-    return `<div class="order-row">
+    return `<div class="order-row" data-pos="${pos}" ${canEdit ? 'draggable="true"' : ''}>
+      ${canEdit ? `<span class="odrag" title="Drag to reorder">⠿</span>` : ''}
       <span class="opos">${pos+1}.</span>
       <span class="oname">${escapeHtml(CONFIG.teamNames[teamIdx])}</span>
       <span class="obadge">${claim ? escapeHtml(claim) : 'unclaimed'}</span>
@@ -910,6 +911,50 @@ function renderOrderList(){
       </span>` : ''}
     </div>`;
   }).join('');
+  if(canEdit) wireOrderDragAndDrop();
+}
+
+let dragSrcPos = null;
+
+function wireOrderDragAndDrop(){
+  const wrap = document.getElementById('orderList');
+  const rows = [...wrap.querySelectorAll('.order-row')];
+  rows.forEach(row=>{
+    row.addEventListener('dragstart', (e)=>{
+      dragSrcPos = parseInt(row.dataset.pos,10);
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(dragSrcPos));
+    });
+    row.addEventListener('dragend', ()=>{
+      row.classList.remove('dragging');
+      rows.forEach(r=>r.classList.remove('drag-over'));
+      dragSrcPos = null;
+    });
+    row.addEventListener('dragover', (e)=>{
+      if(dragSrcPos===null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if(!row.classList.contains('drag-over')){
+        rows.forEach(r=>r.classList.remove('drag-over'));
+        row.classList.add('drag-over');
+      }
+    });
+    row.addEventListener('dragleave', ()=>{
+      row.classList.remove('drag-over');
+    });
+    row.addEventListener('drop', async (e)=>{
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      const targetPos = parseInt(row.dataset.pos,10);
+      if(dragSrcPos===null || dragSrcPos===targetPos) return;
+      const base = [...(CONFIG.baseOrder || [...Array(CONFIG.numTeams).keys()])];
+      const [moved] = base.splice(dragSrcPos,1);
+      base.splice(targetPos,0,moved);
+      dragSrcPos = null;
+      await saveOrder(base);
+    });
+  });
 }
 
 async function saveOrder(newBase){

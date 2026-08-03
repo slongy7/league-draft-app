@@ -98,8 +98,15 @@ select:disabled,input:disabled{opacity:0.4;cursor:not-allowed;}
 
 .order-row{
   display:flex;align-items:center;gap:12px;padding:9px 10px;border-bottom:1px solid #1d222b;
+  border-top:2px solid transparent;transition:opacity .12s ease, border-color .12s ease;
 }
 .order-row:last-child{border-bottom:none;}
+.order-row[draggable="true"]{cursor:grab;}
+.order-row.dragging{opacity:0.4;cursor:grabbing;}
+.order-row.drag-over{border-top-color:var(--turf);}
+.order-row .odrag{
+  color:var(--muted-2);font-size:15px;line-height:1;flex-shrink:0;user-select:none;letter-spacing:-1px;
+}
 .order-row .opos{
   font-family:'JetBrains Mono',monospace;color:var(--muted-2);width:26px;text-align:right;font-size:13px;flex-shrink:0;
 }
@@ -394,7 +401,7 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
     <div class="card" style="margin-top:22px;">
       <h3>Draft order</h3>
       <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
-        Reorder teams however you like — shuffle it, or nudge teams up and down manually. Round 1 goes top to bottom, then it snakes back. Changes apply starting from the next pick; picks already made won't move.
+        Reorder teams however you like — shuffle it, drag a team (⠿) to a new spot, or nudge one up/down with the arrows. Round 1 goes top to bottom, then it snakes back. Changes apply starting from the next pick; picks already made won't move.
       </p>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
         <button class="btn-secondary" id="shuffleOrderBtn">🔀 Shuffle randomly</button>
