@@ -16,12 +16,19 @@ This app ships two ways:
 ## Features
 
 - Live multiplayer snake draft with real-time sync across everyone in the room
+- Mock drafts: practice solo against auto-picking bots, entirely on your device — no
+  invite link, no other players needed (see "Mock drafts" below)
 - Commissioner role (room creator) with sole control over:
   - Draft order (shuffle, or manually reorder teams any time)
   - Keepers (assign a player to a team pre-draft; costs that team's pick in a chosen round)
   - Pick restrictions (block a team from picking in a specific round)
+  - Custom stat columns (add any stat you want tracked, then fill in a value per player)
 - Configurable roster format (QB/RB/WR/TE/FLEX/DST/K counts, bench size)
-- Searchable/filterable player pool (2026 season ADP data, ~258 players)
+- Searchable/filterable player pool (2026 season ADP data, ~258 players) with age, injury
+  history, projected season points, and a full stat line (including receptions for RBs) —
+  click any player's name to see the details
+- Import from an existing ESPN fantasy league (team names, count, roster format) — public
+  or private leagues, via `api/espn.js`
 - Live draft board, per-team roster views, and a downloadable results recap
 
 ## Project structure
@@ -36,6 +43,12 @@ api/
   storage.js    # serverless function replacing window.storage for the website
                 # build: get/set/delete a key, namespaced by ?room= code,
                 # backed by Redis (Upstash, or Vercel's own Storage tab)
+  espn.js       # proxies ESPN's fantasy API so the browser can import a
+                # league without hitting CORS, and so private-league cookies
+                # can be sent as a real Cookie header
+scripts/
+  enrich_players.py  # (re-)generates the age/injury/projections/stats fields
+                     # in src/players.json — see "Data" below
 public/
   index.html, app.js   # built website output (generated — do not hand-edit)
 dist/
@@ -96,7 +109,44 @@ If you ever repoint `API_BASE` at a different backend deployment, rebuild
 (`python3 build.py`) before pushing so both `public/` and `dist/` pick up the
 change.
 
+## Mock drafts
+
+From the setup screen, "🎲 Start mock draft" skips the shared room entirely —
+config and picks are kept in `localStorage` only (`mock_`-prefixed keys), so
+it works even if the backend is unreachable and never touches another user's
+data. Pick your draft slot (or "Random"), and every other team drafts for
+itself: best player available by ADP, honoring roster needs, with a little
+randomness so mocks don't play out identically every time. The draft
+auto-advances through bot picks and stops on your turn; "⏩ Simulate rest"
+finishes out the whole draft (including your remaining picks) instantly if
+you just want to see a finished board. "Start a new draft" on the results
+screen re-runs the same settings; "New mock draft" changes them.
+
+## ESPN league import
+
+On the setup screen, the commissioner can pull team count/names/roster format
+straight from an existing ESPN league instead of typing them in by hand.
+Public leagues only need the numeric league ID (visible in the ESPN URL).
+Private leagues also need the `espn_s2` and `SWID` cookies from a browser
+logged into that league (DevTools → Application → Cookies → espn.com) — these
+are sent to `api/espn.js` for that one request only and never stored.
+ESPN's league API is unofficial and undocumented, so treat this as best-effort:
+if it fails, the error message explains why and you can still fill in the
+form manually.
+
 ## Data
 
 `src/players.json` holds the 2026 season player pool compiled from consensus
-ADP sources. Each entry: `id`, `name`, `pos`, `team`, `bye`, `adp`, `posRank`.
+ADP sources. Each entry: `id`, `name`, `pos`, `team`, `bye`, `adp`, `posRank`,
+`age`, `injuries` (array of notes, `["No major injuries on record"]` if none
+known), `projPts` (projected season fantasy points), and `stats` — a
+position-appropriate stat line (e.g. `rushYds`/`rec`/`recYds`/`recTD` for
+RBs, so PPR-relevant receptions are tracked for every running back).
+
+Age and injury notes are hand-curated for the ~120 most-drafted players from
+public reporting; everyone else gets a formula-based estimate as a starting
+point. All of it — plus league-specific stats you define yourself — can be
+edited from each player's detail popup in the draft room (commissioner only)
+via the "Custom stats" card in the lobby. To regenerate the built-in fields
+after updating the base player list, run `python3 scripts/enrich_players.py`
+then `python3 build.py`.

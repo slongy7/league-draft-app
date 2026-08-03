@@ -3,6 +3,12 @@
    ============================================================ */
 
 const POS_COLOR = {QB:'var(--pos-qb)',RB:'var(--pos-rb)',WR:'var(--pos-wr)',TE:'var(--pos-te)',DST:'var(--pos-dst)',K:'var(--pos-k)'};
+const STAT_LABELS = {
+  passYds:'Pass Yds', passTD:'Pass TD', rushYds:'Rush Yds', rushTD:'Rush TD',
+  rec:'Receptions', recYds:'Rec Yds', recTD:'Rec TD',
+  fgMade:'FG Made', fgAtt:'FG Att', sacks:'Sacks', int:'INT', defTD:'Def TD',
+};
+const PRIMARY_REC_POS = new Set(['RB','WR','TE']);
 const CFG_KEY = 'league_config';
 const DRAFT_KEY = 'league_draft';
 const ID_KEY = 'my_identity';
@@ -17,6 +23,8 @@ let searchTerm = '';
 let rosterViewIdx = null;
 let pollTimer = null;
 let currentScreen = 'loading';
+let MOCK = false;          // true while running a local, solo mock draft
+let botLoopRunning = false;
 
 function genToken(){
   return 'c_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -71,10 +79,15 @@ const API_BASE = 'https://league-draft-app.vercel.app';
    /api/storage backend. Private keys (identity, commissioner token) never
    leave this browser, so they live in localStorage instead. */
 
+// Mock drafts never touch the network — shared reads/writes are redirected to
+// a locally-namespaced key instead, so the exact same render/pick code that
+// drives a real room can drive a solo practice draft too.
+function mockKey(key){ return 'mock_' + key; }
+
 async function storageGet(key, shared){
   try{
-    if(!shared){
-      const raw = localStorage.getItem(key);
+    if(!shared || MOCK){
+      const raw = localStorage.getItem(MOCK && shared ? mockKey(key) : key);
       return raw ? JSON.parse(raw) : null;
     }
     const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`);
@@ -85,8 +98,8 @@ async function storageGet(key, shared){
 }
 async function storageSet(key, value, shared){
   try{
-    if(!shared){
-      localStorage.setItem(key, JSON.stringify(value));
+    if(!shared || MOCK){
+      localStorage.setItem(MOCK && shared ? mockKey(key) : key, JSON.stringify(value));
       return {ok:true};
     }
     const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`, {
@@ -106,7 +119,7 @@ async function storageSet(key, value, shared){
 }
 async function storageDelete(key, shared){
   try{
-    if(!shared){ localStorage.removeItem(key); return; }
+    if(!shared || MOCK){ localStorage.removeItem(MOCK && shared ? mockKey(key) : key); return; }
     await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`, {method:'DELETE'});
   }catch(e){ /* ignore missing key */ }
 }
@@ -237,6 +250,7 @@ async function boot(){
   }
   if(!DRAFT.keepers) DRAFT.keepers = [];
   if(!DRAFT.skips) DRAFT.skips = [];
+  if(!CONFIG.customStats) CONFIG.customStats = {defs:[], values:{}};
   const savedId = await storageGet(ID_KEY, false);
   if(savedId) IDENTITY = savedId;
   const savedCommish = await storageGet('commissioner_token', false);
@@ -251,11 +265,28 @@ async function boot(){
 
 function buildSetupForm(){
   renderTeamNameInputs(10);
+  renderMockSlotOptions(10);
   document.getElementById('setupNumTeams').value = '10';
   document.getElementById('setupNumTeams').addEventListener('change', (e)=>{
-    renderTeamNameInputs(parseInt(e.target.value,10));
+    const n = parseInt(e.target.value,10);
+    renderTeamNameInputs(n);
+    renderMockSlotOptions(n);
   });
   buildRosterConfigInputs();
+}
+
+function ordinalSuffix(n){
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return s[(v-20)%10] || s[v] || s[0];
+}
+
+function renderMockSlotOptions(n){
+  const sel = document.getElementById('mockSlot');
+  const prev = sel.value;
+  const opts = ['<option value="random">Random</option>'];
+  for(let i=1;i<=n;i++) opts.push(`<option value="${i}">${i}${ordinalSuffix(i)} overall</option>`);
+  sel.innerHTML = opts.join('');
+  if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
 }
 
 function renderTeamNameInputs(n){
@@ -290,27 +321,32 @@ function buildRosterConfigInputs(){
   `).join('');
 }
 
+function readSetupForm(){
+  const numTeams = parseInt(document.getElementById('setupNumTeams').value,10);
+  const nameInputs = [...document.querySelectorAll('#teamNameList input')];
+  const teamNames = nameInputs.map((inp,i)=> inp.value.trim() || `Team ${i+1}`);
+  const roster = {};
+  document.querySelectorAll('#rosterConfig select').forEach(sel=>{
+    roster[sel.dataset.key] = parseInt(sel.value,10);
+  });
+  roster.DST = document.getElementById('cfgDST').checked ? 1 : 0;
+  roster.K = document.getElementById('cfgK').checked ? 1 : 0;
+
+  let base = [...Array(numTeams).keys()];
+  if(document.getElementById('setupRandomize').checked){
+    for(let i=base.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [base[i],base[j]] = [base[j],base[i]];
+    }
+  }
+  return {numTeams, teamNames, nameInputs, roster, base};
+}
+
 document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
   try{
-    const numTeams = parseInt(document.getElementById('setupNumTeams').value,10);
-    const nameInputs = [...document.querySelectorAll('#teamNameList input')];
-    const teamNames = nameInputs.map((inp,i)=> inp.value.trim() || `Team ${i+1}`);
-    const roster = {};
-    document.querySelectorAll('#rosterConfig select').forEach(sel=>{
-      roster[sel.dataset.key] = parseInt(sel.value,10);
-    });
-    roster.DST = document.getElementById('cfgDST').checked ? 1 : 0;
-    roster.K = document.getElementById('cfgK').checked ? 1 : 0;
+    const {numTeams, teamNames, roster, base} = readSetupForm();
 
-    let base = [...Array(numTeams).keys()];
-    if(document.getElementById('setupRandomize').checked){
-      for(let i=base.length-1;i>0;i--){
-        const j = Math.floor(Math.random()*(i+1));
-        [base[i],base[j]] = [base[j],base[i]];
-      }
-    }
-
-    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, commissionerToken: genToken()};
+    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, commissionerToken: genToken(), customStats: {defs:[], values:{}}};
     const res = await storageSet(CFG_KEY, CONFIG, true);
     if(!res.ok){ toast('Could not create room: ' + res.error); return; }
     COMMISH_TOKEN = CONFIG.commissionerToken;
@@ -326,6 +362,104 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
     toast('Something went wrong creating the room: ' + (e && e.message ? e.message : String(e)));
   }
 });
+
+/* ---------------- mock draft (solo, local-only) ---------------- */
+
+document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
+  try{
+    const {numTeams, teamNames, nameInputs, roster, base} = readSetupForm();
+    if(!nameInputs[0] || !nameInputs[0].value.trim()) teamNames[0] = 'You';
+
+    const slotVal = document.getElementById('mockSlot').value;
+    const slotPos = slotVal === 'random' ? Math.floor(Math.random()*numTeams) : (parseInt(slotVal,10)-1);
+    const curPos = base.indexOf(0);
+    [base[curPos], base[slotPos]] = [base[slotPos], base[curPos]];
+
+    MOCK = true;
+    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs:[], values:{}}};
+    await storageSet(CFG_KEY, CONFIG, true);
+    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers:[], skips:[], version:1};
+    for(let i=0;i<numTeams;i++) DRAFT.claims[i] = i===0 ? teamNames[0] : 'CPU';
+    await storageSet(DRAFT_KEY, DRAFT, true);
+    IDENTITY = {name: teamNames[0], teamIdx: 0};
+    rosterViewIdx = 0;
+
+    enterDraftScreen();
+    runBotsUntilUserTurn();
+  }catch(e){
+    console.error('Mock draft start failed', e);
+    toast('Something went wrong starting the mock draft: ' + (e && e.message ? e.message : String(e)));
+  }
+});
+
+function pickBotPlayer(teamIdx){
+  const draftedIds = new Set([...DRAFT.picks.map(p=>p.playerId), ...(DRAFT.keepers||[]).map(k=>k.playerId)]);
+  const avail = PLAYERS_RAW.filter(p=>!draftedIds.has(p.id)).sort((a,b)=>a.adp-b.adp);
+  const eligible = avail.filter(p=>findOpenSlotIndexForPick(teamIdx, p.pos)!==-1);
+  const pool = eligible.length ? eligible : avail;
+  if(!pool.length) return null;
+  // Best-player-available with a little variance, so mocks don't play out identically every time.
+  const top = pool.slice(0,4);
+  const weights = [0.5,0.25,0.15,0.10].slice(0,top.length);
+  const norm = weights.reduce((a,b)=>a+b,0);
+  let r = Math.random()*norm;
+  for(let i=0;i<top.length;i++){
+    if(r < weights[i]) return top[i];
+    r -= weights[i];
+  }
+  return top[0];
+}
+
+async function botDraftOnePick(){
+  const sched = buildLiveSchedule();
+  if(DRAFT.overall >= sched.length) return false;
+  const cur = sched[DRAFT.overall];
+  const player = pickBotPlayer(cur.teamIdx);
+  if(!player) return false;
+  DRAFT.picks.push({overall: DRAFT.overall+1, round: cur.round, pickInRound: cur.pickInRound, teamIdx: cur.teamIdx, playerId: player.id});
+  DRAFT.overall++;
+  if(DRAFT.overall >= sched.length) DRAFT.status = 'complete';
+  DRAFT.version = (DRAFT.version||0)+1;
+  await storageSet(DRAFT_KEY, DRAFT, true);
+  return true;
+}
+
+async function runBotsUntilUserTurn(){
+  if(!MOCK || botLoopRunning) return;
+  botLoopRunning = true;
+  try{
+    while(true){
+      const sched = buildLiveSchedule();
+      if(DRAFT.overall >= sched.length){
+        renderResults();
+        showScreen('results');
+        break;
+      }
+      const cur = sched[DRAFT.overall];
+      if(cur.teamIdx === IDENTITY.teamIdx){ renderAll(); break; }
+      const ok = await botDraftOnePick();
+      if(!ok) break;
+      renderAll();
+      await new Promise(r=>setTimeout(r, 260));
+    }
+  } finally {
+    botLoopRunning = false;
+  }
+}
+
+async function simulateRestOfMockDraft(){
+  if(!MOCK) return;
+  while(DRAFT.overall < buildLiveSchedule().length){
+    const ok = await botDraftOnePick();
+    if(!ok) break;
+  }
+  if(DRAFT.status==='complete'){
+    renderResults();
+    showScreen('results');
+  } else {
+    renderAll();
+  }
+}
 
 document.getElementById('copyInviteBtn').addEventListener('click', async ()=>{
   try{
@@ -374,6 +508,7 @@ function renderLobby(){
   renderCommishStatus();
   renderOrderList();
   renderKeeperSkipForms();
+  renderCustomStatsAdmin();
   updateTopbar();
 }
 
@@ -548,6 +683,209 @@ window.removeSkip = async function(idx){
   renderKeeperSkipForms();
 };
 
+/* ---------------- custom stats ---------------- */
+
+function slugifyStatKey(label){
+  const base = label.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'stat';
+  let key = base, n = 1;
+  const existing = new Set((CONFIG.customStats.defs||[]).map(d=>d.key));
+  while(existing.has(key)) key = `${base}_${++n}`;
+  return key;
+}
+
+function renderCustomStatsAdmin(){
+  const canEdit = isCommissioner();
+  document.getElementById('customStatsLocked').style.display = canEdit ? 'none' : 'block';
+  document.getElementById('customStatName').disabled = !canEdit;
+  document.getElementById('addCustomStatBtn').disabled = !canEdit;
+
+  const defs = (CONFIG.customStats && CONFIG.customStats.defs) || [];
+  const wrap = document.getElementById('customStatsList');
+  wrap.innerHTML = defs.length ? defs.map((d,i)=>`
+    <div class="cs-def-row">
+      <span class="csk">${escapeHtml(d.label)}</span>
+      ${canEdit ? `<button class="kx-remove" onclick="removeCustomStat(${i})">Remove</button>` : ''}
+    </div>
+  `).join('') : `<div class="kx-empty">No custom stats yet — add one above.</div>`;
+}
+
+document.getElementById('addCustomStatBtn').addEventListener('click', async ()=>{
+  if(!isCommissioner()){ toast('Only the commissioner can add custom stats.'); return; }
+  const input = document.getElementById('customStatName');
+  const label = input.value.trim();
+  if(!label){ toast('Enter a name for the stat.'); return; }
+  CONFIG = await storageGet(CFG_KEY, true) || CONFIG;
+  if(!CONFIG.customStats) CONFIG.customStats = {defs:[], values:{}};
+  if((CONFIG.customStats.defs||[]).some(d=>d.label.toLowerCase()===label.toLowerCase())){
+    toast('That stat already exists.'); return;
+  }
+  const key = slugifyStatKey(label);
+  CONFIG.customStats.defs = [...(CONFIG.customStats.defs||[]), {key, label}];
+  CONFIG.version = (CONFIG.version||1) + 1;
+  const res = await storageSet(CFG_KEY, CONFIG, true);
+  if(!res.ok){ toast('Could not save: ' + res.error); return; }
+  input.value = '';
+  renderCustomStatsAdmin();
+  toast('Custom stat added.');
+});
+
+window.removeCustomStat = async function(idx){
+  if(!isCommissioner()){ toast('Only the commissioner can remove custom stats.'); return; }
+  CONFIG = await storageGet(CFG_KEY, true) || CONFIG;
+  const defs = CONFIG.customStats.defs || [];
+  const removed = defs[idx];
+  CONFIG.customStats.defs = defs.filter((_,i)=>i!==idx);
+  if(removed){
+    Object.values(CONFIG.customStats.values||{}).forEach(v=>{ delete v[removed.key]; });
+  }
+  CONFIG.version = (CONFIG.version||1) + 1;
+  await storageSet(CFG_KEY, CONFIG, true);
+  renderCustomStatsAdmin();
+};
+
+async function setCustomStatValue(playerId, key, value){
+  if(!isCommissioner()){ toast('Only the commissioner can edit custom stats.'); return; }
+  CONFIG = await storageGet(CFG_KEY, true) || CONFIG;
+  if(!CONFIG.customStats) CONFIG.customStats = {defs:[], values:{}};
+  if(!CONFIG.customStats.values[playerId]) CONFIG.customStats.values[playerId] = {};
+  if(value === ''){ delete CONFIG.customStats.values[playerId][key]; }
+  else { CONFIG.customStats.values[playerId][key] = value; }
+  CONFIG.version = (CONFIG.version||1) + 1;
+  const res = await storageSet(CFG_KEY, CONFIG, true);
+  if(!res.ok){ toast('Could not save: ' + res.error); return; }
+  toast('Saved.');
+}
+
+/* ---------------- player detail modal ---------------- */
+
+let modalPlayerId = null;
+
+window.openPlayerModal = function(playerId){
+  modalPlayerId = playerId;
+  renderPlayerModal();
+  document.getElementById('playerModalOverlay').classList.add('show');
+};
+
+window.closePlayerModal = function(){
+  document.getElementById('playerModalOverlay').classList.remove('show');
+  modalPlayerId = null;
+};
+
+document.getElementById('playerModalOverlay').addEventListener('click', (e)=>{
+  if(e.target.id === 'playerModalOverlay') closePlayerModal();
+});
+
+function renderPlayerModal(){
+  const p = PLAYERS_RAW.find(pl=>pl.id===modalPlayerId);
+  const card = document.getElementById('playerModalCard');
+  if(!p){ card.innerHTML = ''; return; }
+
+  const statRows = Object.entries(p.stats||{}).map(([k,v])=>`
+    <div class="sk">${STAT_LABELS[k]||k}</div><div class="sv">${v}</div>
+  `).join('');
+
+  const injuries = p.injuries||[];
+  const hasRealInjuries = injuries.length && injuries[0] !== 'No major injuries on record';
+  const injuryHtml = hasRealInjuries
+    ? `<ul class="injury-list">${injuries.map(i=>`<li>🩹 ${escapeHtml(i)}</li>`).join('')}</ul>`
+    : `<div class="injury-none">No major injuries on record.</div>`;
+
+  const canEdit = isCommissioner();
+  const defs = (CONFIG.customStats && CONFIG.customStats.defs) || [];
+  const values = (CONFIG.customStats && CONFIG.customStats.values && CONFIG.customStats.values[p.id]) || {};
+  const customHtml = defs.length ? defs.map(d=>`
+    <div class="custom-stat-row">
+      <span class="csk">${escapeHtml(d.label)}</span>
+      <input type="text" value="${escapeHtml(values[d.key]!==undefined?String(values[d.key]):'')}"
+        ${canEdit?'':'disabled'} data-stat-key="${d.key}" placeholder="—">
+    </div>
+  `).join('') : `<div class="injury-none">No custom stats defined yet. Add some from the lobby.</div>`;
+
+  card.innerHTML = `
+    <button class="modal-close" onclick="closePlayerModal()">✕</button>
+    <div class="modal-title">${posPill(p.pos)} ${escapeHtml(p.name)}</div>
+    <div class="modal-sub">${p.team} · ${p.posRank} · Bye ${p.bye} · ADP ${p.adp}${p.age?` · Age ${p.age}`:''}</div>
+    <div class="stat-grid">
+      <div class="sk">Projected Pts</div><div class="sv">${p.projPts ?? '—'}</div>
+      ${statRows}
+    </div>
+    <div class="modal-section">
+      <h4>Injury history</h4>
+      ${injuryHtml}
+    </div>
+    <div class="modal-section">
+      <h4>Custom stats</h4>
+      ${customHtml}
+    </div>
+  `;
+
+  if(canEdit){
+    card.querySelectorAll('input[data-stat-key]').forEach(inp=>{
+      inp.addEventListener('change', ()=> setCustomStatValue(p.id, inp.dataset.statKey, inp.value.trim()));
+    });
+  }
+}
+
+/* ---------------- ESPN league import ---------------- */
+
+document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
+  const statusEl = document.getElementById('espnStatus');
+  const showStatus = (msg, ok)=>{
+    statusEl.textContent = msg;
+    statusEl.className = 'espn-status show ' + (ok ? 'ok' : 'err');
+  };
+  const leagueId = document.getElementById('espnLeagueId').value.trim();
+  const season = document.getElementById('espnSeason').value.trim();
+  const espnS2 = document.getElementById('espnS2').value.trim();
+  const swid = document.getElementById('espnSwid').value.trim();
+  if(!leagueId){ showStatus('Enter your ESPN league ID first.', false); return; }
+
+  const btn = document.getElementById('espnImportBtn');
+  btn.disabled = true; btn.textContent = 'Importing…';
+  try{
+    const res = await fetch(`${API_BASE}/api/espn`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({leagueId, season, espnS2, swid}),
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok){
+      showStatus(data.error || `ESPN import failed (${res.status}).`, false);
+      return;
+    }
+
+    const n = Math.max(2, Math.min(16, data.numTeams || data.teams.length));
+    const numTeamsSel = document.getElementById('setupNumTeams');
+    if([...numTeamsSel.options].some(o=>o.value===String(n))){
+      numTeamsSel.value = String(n);
+    }
+    renderTeamNameInputs(n);
+    const inputs = [...document.querySelectorAll('#teamNameList input')];
+    data.teams.slice(0,n).forEach((t,i)=>{ if(inputs[i]) inputs[i].value = t.name; });
+
+    if(data.roster){
+      const r = data.roster;
+      document.querySelectorAll('#rosterConfig select').forEach(sel=>{
+        const key = sel.dataset.key;
+        const val = r[key];
+        if(val===undefined) return;
+        const opts = [...sel.options].map(o=>o.value);
+        const nearest = opts.reduce((best,o)=> Math.abs(o-val) < Math.abs(best-val) ? o : best, opts[0]);
+        sel.value = String(nearest);
+      });
+      document.getElementById('cfgDST').checked = !!r.DST;
+      document.getElementById('cfgK').checked = !!r.K;
+    }
+
+    showStatus(`✓ Imported "${data.leagueName}" — ${n} teams. Review the settings below, then create the room.`, true);
+  }catch(e){
+    console.error('ESPN import failed', e);
+    showStatus('Could not reach the import service. Try again in a moment.', false);
+  }finally{
+    btn.disabled = false; btn.textContent = '⬇ Import league';
+  }
+});
+
 function renderOrderList(){
   const wrap = document.getElementById('orderList');
   const base = CONFIG.baseOrder || [...Array(CONFIG.numTeams).keys()];
@@ -660,15 +998,27 @@ function enterDraftScreen(){
   buildRosterTeamSelect();
   renderAll();
   showScreen('draft');
+  document.getElementById('backToLobbyBtn').textContent = MOCK ? '🎲 New mock draft' : '← Lobby';
+  document.getElementById('refreshBtn').style.display = MOCK ? 'none' : 'inline-block';
+  document.getElementById('simRestBtn').style.display = MOCK ? 'inline-block' : 'none';
   if(DRAFT.status==='complete') showScreen('results'), renderResults();
 }
 
 document.getElementById('backToLobbyBtn').addEventListener('click', ()=>{
+  if(MOCK){
+    MOCK = false;
+    buildSetupForm();
+    showScreen('setup');
+    return;
+  }
   renderLobby();
   showScreen('lobby');
 });
 document.getElementById('refreshBtn').addEventListener('click', async ()=>{
   await pollOnce(true);
+});
+document.getElementById('simRestBtn').addEventListener('click', async ()=>{
+  await simulateRestOfMockDraft();
 });
 
 function buildPosTabs(){
@@ -691,7 +1041,7 @@ document.getElementById('searchBox').addEventListener('input', (e)=>{
 
 function buildRosterTeamSelect(){
   const sel = document.getElementById('rosterTeamSelect');
-  sel.innerHTML = CONFIG.teamNames.map((n,i)=>`<option value="${i}">${escapeHtml(n)}${IDENTITY.teamIdx===i?' (you)':''}</option>`).join('');
+  sel.innerHTML = CONFIG.teamNames.map((n,i)=>`<option value="${i}">${escapeHtml(n)}${IDENTITY.teamIdx===i?' (you)':(MOCK?' (CPU)':'')}</option>`).join('');
   sel.value = rosterViewIdx !== null ? rosterViewIdx : 0;
   sel.onchange = ()=>{ rosterViewIdx = parseInt(sel.value,10); renderRoster(); };
 }
@@ -738,6 +1088,7 @@ window.userDraft = async function(playerId){
     showScreen('results');
   } else {
     renderAll();
+    if(MOCK) runBotsUntilUserTurn();
   }
 };
 
@@ -787,6 +1138,7 @@ function renderAll(){
 function updateTopbar(){
   const bar = document.getElementById('topbarStatus');
   const bits = [];
+  if(MOCK) bits.push(`<span class="mock-tag">🎲 MOCK DRAFT</span>`);
   if(CONFIG) bits.push(`Pick ${Math.min(DRAFT.overall+1, totalPicks())} of ${totalPicks()}`);
   if(IDENTITY.name){
     const teamLabel = (IDENTITY.teamIdx!==null && IDENTITY.teamIdx!==undefined) ? CONFIG.teamNames[IDENTITY.teamIdx] : 'spectating';
@@ -852,18 +1204,26 @@ function renderPlayerList(){
   list.sort((a,b)=>a.adp-b.adp);
   list = list.slice(0,150);
 
-  body.innerHTML = list.map(p=>`
+  body.innerHTML = list.map(p=>{
+    const hasInjury = (p.injuries||[]).length && p.injuries[0] !== 'No major injuries on record';
+    const injuryBadge = hasInjury ? `<span class="injury-tag" title="${escapeHtml(p.injuries.join(' | '))}">🩹</span>` : '';
+    const rec = PRIMARY_REC_POS.has(p.pos) && p.stats ? (p.stats.rec ?? '—') : '—';
+    return `
     <tr>
       <td class="adp-num">${p.adp}</td>
       <td>${posPill(p.pos)}</td>
-      <td><div class="pname">${escapeHtml(p.name)}</div><div class="pmeta">${p.team} · ${p.posRank}</div></td>
+      <td><div class="pname pname-link" onclick="openPlayerModal(${p.id})">${escapeHtml(p.name)} ${injuryBadge}</div><div class="pmeta">${p.team} · ${p.posRank}</div></td>
+      <td class="pmeta">${p.age ?? '—'}</td>
+      <td class="pmeta">${p.projPts ?? '—'}</td>
+      <td class="pmeta">${rec}</td>
       <td class="pmeta">${p.bye}</td>
       <td><button class="btn-draft" ${canPick?'':'disabled'} onclick="userDraft(${p.id})">Draft</button></td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   if(!list.length){
-    body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">No players match your filters.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px;">No players match your filters.</td></tr>`;
   }
 }
 
@@ -877,8 +1237,8 @@ function renderRoster(){
       return `<div class="roster-slot">
         <div class="slot-tag">${s.slotType}</div>
         <div class="slot-player">
-          <span class="pname">${posPill(p.pos)} ${escapeHtml(p.name)}</span>
-          <span class="pmeta">${p.team} · Bye ${p.bye} · ADP ${p.adp}</span>
+          <span class="pname pname-link" onclick="openPlayerModal(${p.id})">${posPill(p.pos)} ${escapeHtml(p.name)}</span>
+          <span class="pmeta">${p.team} · Bye ${p.bye} · ADP ${p.adp} · Proj ${p.projPts ?? '—'}</span>
         </div>
       </div>`;
     }
@@ -910,7 +1270,7 @@ function renderBoard(){
       const isCurrent = onClockTeam===teamIdx && onClockRound===(r+1);
       if(keeper){
         const p = PLAYERS_RAW.find(pl=>pl.id===keeper.playerId);
-        rows += `<td><div class="cell-pick" style="background:rgba(232,163,61,0.08);border-left:3px solid var(--amber)">
+        rows += `<td><div class="cell-pick" style="background:rgba(108,195,230,0.08);border-left:3px solid var(--steel)">
           <div class="pp">${p?escapeHtml(p.name):'—'}</div><div class="pt">KEEPER · ${p?p.pos:''}</div></div></td>`;
       } else if(skip){
         rows += `<td class="cell-empty" style="color:var(--red);">SKIPPED</td>`;
@@ -933,6 +1293,7 @@ document.getElementById('resetPicksBtn').addEventListener('click', async ()=>{
   DRAFT = {status:'lobby', overall:0, picks:[], claims:DRAFT.claims, keepers:DRAFT.keepers||[], skips:DRAFT.skips||[], version:(DRAFT.version||0)+1};
   await storageSet(DRAFT_KEY, DRAFT, true);
   renderAll();
+  if(MOCK) runBotsUntilUserTurn();
 });
 
 /* ---------------- results ---------------- */
@@ -951,6 +1312,7 @@ function renderResults(){
       ${rows}
     </div>`;
   }).join('');
+  document.getElementById('newMockFromResultsBtn').style.display = MOCK ? 'inline-block' : 'none';
   updateTopbar();
 }
 
@@ -978,8 +1340,19 @@ document.getElementById('resetFromResultsBtn').addEventListener('click', async (
   if(!confirm('Start a brand new draft? This clears all picks (teams, claims, keepers, and pick restrictions stay).')) return;
   DRAFT = {status:'lobby', overall:0, picks:[], claims:DRAFT.claims, keepers:DRAFT.keepers||[], skips:DRAFT.skips||[], version:(DRAFT.version||0)+1};
   await storageSet(DRAFT_KEY, DRAFT, true);
-  renderLobby();
-  showScreen('lobby');
+  if(MOCK){
+    enterDraftScreen();
+    runBotsUntilUserTurn();
+  } else {
+    renderLobby();
+    showScreen('lobby');
+  }
+});
+
+document.getElementById('newMockFromResultsBtn').addEventListener('click', ()=>{
+  MOCK = false;
+  buildSetupForm();
+  showScreen('setup');
 });
 
 boot();
