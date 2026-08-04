@@ -256,8 +256,13 @@ async function boot(){
   const savedCommish = await storageGet('commissioner_token', false);
   if(savedCommish) COMMISH_TOKEN = savedCommish.token;
 
-  renderLobby();
-  showScreen('lobby');
+  if(DRAFT.status==='complete'){
+    renderResults();
+    showScreen('results');
+  } else {
+    renderLobby();
+    showScreen('lobby');
+  }
   startPolling();
 }
 
@@ -1421,6 +1426,40 @@ function renderResults(){
   document.getElementById('newMockFromResultsBtn').style.display = MOCK ? 'inline-block' : 'none';
   updateTopbar();
 }
+
+function buildShareText(includeLink){
+  const base = CONFIG.baseOrder || [...Array(CONFIG.numTeams).keys()];
+  const round1 = base.map((teamIdx,i)=>{
+    const pick = DRAFT.picks.find(p=>p.teamIdx===teamIdx && p.round===1)
+      || (DRAFT.keepers||[]).find(k=>k.teamIdx===teamIdx && k.round===1);
+    const p = pick ? PLAYERS_RAW.find(pl=>pl.id===pick.playerId) : null;
+    return `${i+1}. ${CONFIG.teamNames[teamIdx]} — ${p ? p.name : '—'}`;
+  }).join('\n');
+  let text = `🏈 ${MOCK ? 'Mock draft' : 'League of Pretty Ordinary Gentlemen'} complete — ${CONFIG.numTeams} teams, ${totalPicks()} picks!\n\nRound 1:\n${round1}`;
+  if(includeLink && !MOCK) text += `\n\nFull results: ${location.href}`;
+  return text;
+}
+
+document.getElementById('shareResultsBtn').addEventListener('click', async ()=>{
+  if(navigator.share){
+    try{
+      await navigator.share({
+        title: 'Draft Results',
+        text: buildShareText(false),
+        ...(MOCK ? {} : {url: location.href}),
+      });
+      return;
+    }catch(e){
+      if(e && e.name === 'AbortError') return; // user closed the share sheet — not an error
+    }
+  }
+  try{
+    await navigator.clipboard.writeText(buildShareText(true));
+    toast(MOCK ? 'Results copied to clipboard!' : 'Results copied — paste them anywhere to share!');
+  }catch(e){
+    toast('Could not copy automatically — select and copy the results manually.');
+  }
+});
 
 document.getElementById('downloadBtn').addEventListener('click', ()=>{
   let text = 'LEAGUE OF PRETTY ORDINARY GENTLEMEN — Draft Results\n';

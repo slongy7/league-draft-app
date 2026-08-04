@@ -30,6 +30,9 @@ This app ships two ways:
 - Import from an existing ESPN fantasy league (team names, count, roster format) — public
   or private leagues, via `api/espn.js`
 - Live draft board, per-team roster views, and a downloadable results recap
+- Share results with one tap (native share sheet on mobile, clipboard copy on
+  desktop) — a round-1 recap plus a link that opens straight to the results
+  screen, no extra clicks
 
 ## Project structure
 
