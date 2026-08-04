@@ -16,6 +16,7 @@ This app ships two ways:
 ## Features
 
 - Live multiplayer snake draft with real-time sync across everyone in the room
+- Claim a team and rename it to whatever you want — no need to wait on the commissioner
 - Mock drafts: practice solo against auto-picking bots, entirely on your device — no
   invite link, no other players needed (see "Mock drafts" below)
 - Commissioner role (room creator) with sole control over:

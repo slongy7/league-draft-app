@@ -96,6 +96,11 @@ select:disabled,input:disabled{opacity:0.4;cursor:not-allowed;}
 .team-card2{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;}
 .team-card2.mine{border-color:var(--turf);box-shadow:0 0 0 1px var(--turf) inset;}
 .team-card2 .tname{font-family:'Teko',sans-serif;font-size:22px;font-weight:600;}
+.tname-edit{display:flex;gap:6px;align-items:center;}
+.tname-edit .tname-input{
+  flex:1;min-width:0;font-family:'Teko',sans-serif;font-size:19px;font-weight:600;padding:6px 8px;
+}
+.tname-edit .tname-save{font-size:11.5px;padding:6px 10px;flex-shrink:0;}
 .claim-status{font-size:12px;color:var(--muted);}
 .claim-status.taken{color:var(--amber);}
 .claim-status.mine{color:var(--turf);font-weight:700;}
@@ -1146,12 +1151,34 @@ function renderLobby(){
       statusHtml = `<div class="claim-status">○ Open</div>`;
       btnHtml = `<button class="btn-secondary" onclick="claimTeam(${i})">Claim this team</button>`;
     }
+    const nameHtml = isMine
+      ? `<div class="tname-edit">
+          <input type="text" class="tname-input" data-idx="${i}" maxlength="40" value="${escapeHtml(name)}">
+          <button class="btn-ghost tname-save" data-idx="${i}">Save</button>
+        </div>`
+      : `<div class="tname">${escapeHtml(name)}</div>`;
     return `<div class="team-card2 ${isMine?'mine':''}">
-      <div class="tname">${escapeHtml(name)}</div>
+      ${nameHtml}
       ${statusHtml}
       ${btnHtml}
     </div>`;
   }).join('');
+
+  wrap.querySelectorAll('.tname-save').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = parseInt(btn.dataset.idx,10);
+      const input = wrap.querySelector(`.tname-input[data-idx="${idx}"]`);
+      renameMyTeam(idx, input.value);
+    });
+  });
+  wrap.querySelectorAll('.tname-input').forEach(inp=>{
+    inp.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter'){
+        e.preventDefault();
+        renameMyTeam(parseInt(inp.dataset.idx,10), inp.value);
+      }
+    });
+  });
 
   const hint = document.getElementById('lobbyHint');
   const claimedCount = Object.keys(DRAFT.claims).length;
@@ -1671,6 +1698,22 @@ window.unclaimTeam = async function(teamIdx){
   IDENTITY = {name: IDENTITY.name, teamIdx: null};
   await storageSet(ID_KEY, IDENTITY, false);
   renderLobby();
+};
+
+window.renameMyTeam = async function(teamIdx, newName){
+  newName = (newName||'').trim();
+  if(!newName){ toast("Team name can't be empty."); renderLobby(); return; }
+  if(IDENTITY.teamIdx !== teamIdx){ toast('You can only rename your own team.'); return; }
+  DRAFT = await storageGet(DRAFT_KEY, true) || DRAFT;
+  if(DRAFT.claims[teamIdx] !== IDENTITY.name){ toast("You don't have this team claimed anymore."); renderLobby(); return; }
+  CONFIG = await storageGet(CFG_KEY, true) || CONFIG;
+  CONFIG.teamNames[teamIdx] = newName;
+  CONFIG.version = (CONFIG.version||1) + 1;
+  const res = await storageSet(CFG_KEY, CONFIG, true);
+  if(!res.ok){ toast('Could not save: ' + res.error); return; }
+  renderLobby();
+  if(currentScreen==='draft') renderAll();
+  toast('Team name updated!');
 };
 
 document.getElementById('enterRoomBtn').addEventListener('click', async ()=>{

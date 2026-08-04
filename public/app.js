@@ -555,12 +555,34 @@ function renderLobby(){
       statusHtml = `<div class="claim-status">○ Open</div>`;
       btnHtml = `<button class="btn-secondary" onclick="claimTeam(${i})">Claim this team</button>`;
     }
+    const nameHtml = isMine
+      ? `<div class="tname-edit">
+          <input type="text" class="tname-input" data-idx="${i}" maxlength="40" value="${escapeHtml(name)}">
+          <button class="btn-ghost tname-save" data-idx="${i}">Save</button>
+        </div>`
+      : `<div class="tname">${escapeHtml(name)}</div>`;
     return `<div class="team-card2 ${isMine?'mine':''}">
-      <div class="tname">${escapeHtml(name)}</div>
+      ${nameHtml}
       ${statusHtml}
       ${btnHtml}
     </div>`;
   }).join('');
+
+  wrap.querySelectorAll('.tname-save').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = parseInt(btn.dataset.idx,10);
+      const input = wrap.querySelector(`.tname-input[data-idx="${idx}"]`);
+      renameMyTeam(idx, input.value);
+    });
+  });
+  wrap.querySelectorAll('.tname-input').forEach(inp=>{
+    inp.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter'){
+        e.preventDefault();
+        renameMyTeam(parseInt(inp.dataset.idx,10), inp.value);
+      }
+    });
+  });
 
   const hint = document.getElementById('lobbyHint');
   const claimedCount = Object.keys(DRAFT.claims).length;
@@ -1080,6 +1102,22 @@ window.unclaimTeam = async function(teamIdx){
   IDENTITY = {name: IDENTITY.name, teamIdx: null};
   await storageSet(ID_KEY, IDENTITY, false);
   renderLobby();
+};
+
+window.renameMyTeam = async function(teamIdx, newName){
+  newName = (newName||'').trim();
+  if(!newName){ toast("Team name can't be empty."); renderLobby(); return; }
+  if(IDENTITY.teamIdx !== teamIdx){ toast('You can only rename your own team.'); return; }
+  DRAFT = await storageGet(DRAFT_KEY, true) || DRAFT;
+  if(DRAFT.claims[teamIdx] !== IDENTITY.name){ toast("You don't have this team claimed anymore."); renderLobby(); return; }
+  CONFIG = await storageGet(CFG_KEY, true) || CONFIG;
+  CONFIG.teamNames[teamIdx] = newName;
+  CONFIG.version = (CONFIG.version||1) + 1;
+  const res = await storageSet(CFG_KEY, CONFIG, true);
+  if(!res.ok){ toast('Could not save: ' + res.error); return; }
+  renderLobby();
+  if(currentScreen==='draft') renderAll();
+  toast('Team name updated!');
 };
 
 document.getElementById('enterRoomBtn').addEventListener('click', async ()=>{
