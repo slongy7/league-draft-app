@@ -349,6 +349,9 @@ function wireTeamNameDragAndDrop(){
       else row.before(dragSrcNameRow);
       dragSrcNameRow = null;
       renumberTeamNameRows();
+      // Dragging is a deliberate manual order — don't let the (default-on)
+      // randomize checkbox silently discard it.
+      document.getElementById('setupRandomize').checked = false;
     });
   });
 }
@@ -1347,9 +1350,13 @@ function renderRoster(){
 
 function renderBoard(){
   const table = document.getElementById('boardTable');
+  // Columns follow the actual configured draft order (round 1, left to right),
+  // not raw team-list order, so the board matches what was set on setup/lobby.
+  const base = CONFIG.baseOrder || [...Array(CONFIG.numTeams).keys()];
   let thead = '<thead><tr><th class="rnd">RD</th>';
   for(let i=0;i<CONFIG.numTeams;i++){
-    thead += `<th class="${IDENTITY.teamIdx===i?'you':''}">${escapeHtml(CONFIG.teamNames[i])}</th>`;
+    const teamIdx = base[i];
+    thead += `<th class="${IDENTITY.teamIdx===teamIdx?'you':''}">${escapeHtml(CONFIG.teamNames[teamIdx])}</th>`;
   }
   thead += '</tr></thead>';
 
@@ -1362,7 +1369,7 @@ function renderBoard(){
   for(let r=0;r<rounds;r++){
     rows += `<tr><td class="rnd">${r+1}</td>`;
     for(let col=0; col<CONFIG.numTeams; col++){
-      const teamIdx = col; // each column is a fixed team, independent of draft order
+      const teamIdx = base[col]; // fixed column per team, ordered by round-1 draft position
       const keeper = (DRAFT.keepers||[]).find(k=>k.teamIdx===teamIdx && k.round===r+1);
       const skip = (DRAFT.skips||[]).find(k=>k.teamIdx===teamIdx && k.round===r+1);
       const pick = DRAFT.picks.find(pk=>pk.teamIdx===teamIdx && pk.round===r+1);
