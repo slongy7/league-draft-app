@@ -300,9 +300,57 @@ function renderTeamNameInputs(n){
   for(let i=0;i<n;i++){
     const row = document.createElement('div');
     row.className = 'team-name-row';
-    row.innerHTML = `<span class="idx">${i+1}</span><input type="text" placeholder="Team ${i+1}" value="${existing[i]||''}">`;
+    row.draggable = true;
+    row.innerHTML = `<span class="odrag" title="Drag to set draft order">⠿</span><span class="idx">${i+1}</span><input type="text" placeholder="Team ${i+1}" value="${existing[i]||''}">`;
     wrap.appendChild(row);
   }
+  wireTeamNameDragAndDrop();
+}
+
+function renumberTeamNameRows(){
+  document.querySelectorAll('#teamNameList .team-name-row').forEach((row,i)=>{
+    row.querySelector('.idx').textContent = i+1;
+    row.querySelector('input').placeholder = `Team ${i+1}`;
+  });
+}
+
+let dragSrcNameRow = null;
+
+function wireTeamNameDragAndDrop(){
+  const wrap = document.getElementById('teamNameList');
+  [...wrap.querySelectorAll('.team-name-row')].forEach(row=>{
+    row.addEventListener('dragstart', ()=>{
+      dragSrcNameRow = row;
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', ()=>{
+      row.classList.remove('dragging');
+      wrap.querySelectorAll('.team-name-row').forEach(r=>r.classList.remove('drag-over'));
+      dragSrcNameRow = null;
+    });
+    row.addEventListener('dragover', (e)=>{
+      if(!dragSrcNameRow || dragSrcNameRow===row) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      wrap.querySelectorAll('.team-name-row').forEach(r=>r.classList.remove('drag-over'));
+      row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', ()=>{
+      row.classList.remove('drag-over');
+    });
+    row.addEventListener('drop', (e)=>{
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      if(!dragSrcNameRow || dragSrcNameRow===row) return;
+      const rows = [...wrap.children];
+      const srcIdx = rows.indexOf(dragSrcNameRow);
+      const targetIdx = rows.indexOf(row);
+      if(srcIdx < targetIdx) row.after(dragSrcNameRow);
+      else row.before(dragSrcNameRow);
+      dragSrcNameRow = null;
+      renumberTeamNameRows();
+    });
+  });
 }
 
 function buildRosterConfigInputs(){

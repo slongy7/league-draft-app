@@ -75,7 +75,13 @@ select:disabled,input:disabled{opacity:0.4;cursor:not-allowed;}
 @media(max-width:700px){.row-roster{grid-template-columns:repeat(3,1fr);} .row2{grid-template-columns:1fr;}}
 .roster-mini label{font-size:10.5px;}
 .team-name-list{display:flex;flex-direction:column;gap:8px;}
-.team-name-row{display:flex;align-items:center;gap:10px;}
+.team-name-row{
+  display:flex;align-items:center;gap:10px;cursor:grab;
+  border-top:2px solid transparent;padding-top:2px;transition:opacity .12s ease, border-color .12s ease;
+}
+.team-name-row.dragging{opacity:0.4;cursor:grabbing;}
+.team-name-row.drag-over{border-top-color:var(--turf);}
+.team-name-row .odrag{color:var(--muted-2);font-size:15px;line-height:1;flex-shrink:0;user-select:none;letter-spacing:-1px;}
 .team-name-row .idx{font-family:'JetBrains Mono',monospace;color:var(--muted-2);width:26px;text-align:right;font-size:13px;}
 .team-name-row input{flex:1;}
 .checkline{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text);margin-top:4px;}
@@ -353,6 +359,9 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       </div>
       <div class="field" style="margin-top:16px;">
         <label>Team names</label>
+        <p style="color:var(--muted-2);font-size:12px;margin:-2px 0 2px;">
+          This top-to-bottom order is round 1's draft order (unless you randomize it above) — drag ⠿ to rearrange. You can still change it later too.
+        </p>
         <div class="team-name-list" id="teamNameList"></div>
       </div>
     </div>
