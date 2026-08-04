@@ -1146,8 +1146,18 @@ function enterDraftScreen(){
   document.getElementById('backToLobbyBtn').textContent = MOCK ? '🎲 New mock draft' : '← Lobby';
   document.getElementById('refreshBtn').style.display = MOCK ? 'none' : 'inline-block';
   document.getElementById('simRestBtn').style.display = MOCK ? 'inline-block' : 'none';
+  document.getElementById('renameMyTeamBtn').style.display =
+    (IDENTITY.teamIdx!==null && IDENTITY.teamIdx!==undefined) ? 'inline-block' : 'none';
   if(DRAFT.status==='complete') showScreen('results'), renderResults();
 }
+
+document.getElementById('renameMyTeamBtn').addEventListener('click', ()=>{
+  if(IDENTITY.teamIdx===null || IDENTITY.teamIdx===undefined){ toast('Claim a team first.'); return; }
+  const current = CONFIG.teamNames[IDENTITY.teamIdx];
+  const next = prompt('Rename your team:', current);
+  if(next===null) return; // cancelled
+  renameMyTeam(IDENTITY.teamIdx, next);
+});
 
 document.getElementById('backToLobbyBtn').addEventListener('click', ()=>{
   if(MOCK){
