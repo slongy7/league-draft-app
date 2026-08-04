@@ -489,10 +489,11 @@ async function runBotsUntilUserTurn(){
       }
       const cur = sched[DRAFT.overall];
       if(cur.teamIdx === IDENTITY.teamIdx){ renderAll(); break; }
+      renderAll(); // show this pick "on the clock" before it resolves, so nothing skips ahead unseen
+      await new Promise(r=>setTimeout(r, 260));
       const ok = await botDraftOnePick();
       if(!ok) break;
       renderAll();
-      await new Promise(r=>setTimeout(r, 260));
     }
   } finally {
     botLoopRunning = false;
