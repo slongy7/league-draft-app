@@ -83,6 +83,7 @@ const LS = {
   customValues: LS_PREFIX+'custom_values_v1',
   strategy: LS_PREFIX+'strategy_v1',
   numTeams: LS_PREFIX+'num_teams_v1',
+  expertRank: LS_PREFIX+'expert_rank_v1',
 };
 
 function loadJSON(key, fallback){
@@ -97,6 +98,7 @@ const state = {
   customValues: loadJSON(LS.customValues, {}), // {playerId: {statKey: value}}
   strategy: loadJSON(LS.strategy, 'bpa'),
   numTeams: loadJSON(LS.numTeams, 12),
+  expertRank: loadJSON(LS.expertRank, {}), // {playerId: rank} — commissioner-entered Draft Sharks (or any expert) rank
   search: '',
   pos: 'ALL',
   team: 'ALL',
@@ -113,6 +115,7 @@ function persistCustomStats(){ saveJSON(LS.customStats, state.customStats); }
 function persistCustomValues(){ saveJSON(LS.customValues, state.customValues); }
 function persistStrategy(){ saveJSON(LS.strategy, state.strategy); }
 function persistNumTeams(){ saveJSON(LS.numTeams, state.numTeams); }
+function persistExpertRank(){ saveJSON(LS.expertRank, state.expertRank); }
 
 function esc(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -215,6 +218,16 @@ function strategyFit(player, strategyKey, numTeams){
 let tierMap = {};
 offenseGrades = computeOffenseGrades(PLAYERS);
 
+// Positive diff = ADP later than the expert rank (market undervaluing = a value).
+// Negative diff = ADP earlier than the expert rank (market overvaluing = a reach).
+function adpDiff(p){
+  const rank = state.expertRank[p.id];
+  if(rank==null || rank==='') return null;
+  const n = Number(rank);
+  if(Number.isNaN(n)) return null;
+  return p.adp - n;
+}
+
 /* ---------------- filtering / sorting ---------------- */
 
 function visiblePlayers(){
@@ -230,6 +243,8 @@ function visiblePlayers(){
   list = list.slice().sort((a,b) => {
     let av, bv;
     if(state.sortKey === 'rec'){ av = (a.stats.rec||0); bv = (b.stats.rec||0); }
+    else if(state.sortKey === 'expertRank'){ av = Number(state.expertRank[a.id]) || 0; bv = Number(state.expertRank[b.id]) || 0; }
+    else if(state.sortKey === 'adpDiff'){ av = adpDiff(a) || 0; bv = adpDiff(b) || 0; }
     else if(state.sortKey.startsWith('custom:')){
       const key = state.sortKey.slice(7);
       av = Number((state.customValues[a.id]||{})[key]) || 0;
@@ -261,11 +276,15 @@ function renderHead(){
     {key:'rec', label:'Rec'},
     {key:'offense', label:'Off Grade'},
     {key:'fit', label:'Fit'},
+    {key:'expertRank', label:'DS Rk'},
+    {key:'adpDiff', label:'Diff'},
   ];
   let html = cols.map(c => {
     if(c.key==='sel') return `<th style="width:26px;"></th>`;
     const sorted = state.sortKey===c.key || (c.key==='rank' && state.sortKey==='adp');
-    return `<th data-sort="${c.key}" class="${sorted?'sorted':''}">${esc(c.label)}</th>`;
+    const title = c.key==='expertRank' ? ' title="Draft Sharks (or any expert source) rank — edit inline, or use Import Draft Sharks ranks"'
+      : c.key==='adpDiff' ? ' title="ADP minus Draft Sharks rank. Positive = value (ADP later than expert rank), negative = reach."' : '';
+    return `<th data-sort="${c.key}" class="${sorted?'sorted':''}"${title}>${esc(c.label)}</th>`;
   }).join('');
   state.customStats.forEach(cs => {
     html += `<th data-sort="custom:${esc(cs.key)}" class="${state.sortKey==='custom:'+cs.key?'sorted':''}">${esc(cs.label)}<span class="rm-col" data-remove-stat="${esc(cs.key)}" title="Remove this stat column"> ×</span></th>`;
@@ -301,6 +320,15 @@ function renderRow(p, idx){
   } else {
     row += `<td>—</td>`;
   }
+  row += `<td><input type="number" class="mono expert-input" style="width:56px;" data-id="${p.id}" value="${esc(state.expertRank[p.id]==null?'':state.expertRank[p.id])}" placeholder="—"></td>`;
+  const diff = adpDiff(p);
+  if(diff==null){
+    row += `<td>—</td>`;
+  } else {
+    const tag = diff>3 ? 'priority' : diff<-3 ? 'fade' : 'neutral';
+    const sign = diff>0 ? '+' : '';
+    row += `<td><span class="fit-badge fit-${tag}" title="ADP ${p.adp} vs Draft Sharks rank ${state.expertRank[p.id]}">${sign}${diff}</span></td>`;
+  }
   state.customStats.forEach(cs => {
     const val = (state.customValues[p.id]||{})[cs.key];
     row += `<td><input type="text" class="mono custom-input" style="width:70px;" data-id="${p.id}" data-stat="${esc(cs.key)}" value="${esc(val==null?'':val)}"></td>`;
@@ -321,6 +349,12 @@ function renderDetailRow(p){
   stats += `<div class="detail-stat"><span class="dlabel">Age</span><span class="dval">${p.age||'—'}</span></div>`;
   stats += `<div class="detail-stat"><span class="dlabel">Proj Pts</span><span class="dval">${fmt(p.projPts)}</span></div>`;
   const injuries = (p.injuries && p.injuries.length) ? p.injuries.join('; ') : 'No notable injury history on record.';
+  const diff = adpDiff(p);
+  const ranking = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">Draft Sharks (or any expert) rank</div>
+    <div class="cfield"><label>ADP</label><span class="mono" style="color:var(--muted);">${p.adp}</span></div>
+    <div class="cfield"><label>Expert rank</label><input type="number" class="mono expert-input" data-id="${p.id}" value="${esc(state.expertRank[p.id]==null?'':state.expertRank[p.id])}" placeholder="—"></div>
+    <div class="cfield"><label>ADP diff</label><span class="mono" style="color:${diff==null?'var(--muted-2)':diff>3?'var(--good)':diff<-3?'var(--bad)':'var(--muted)'};">${diff==null?'—':(diff>0?'+':'')+diff}</span></div>
+  </div>`;
   let custom = '';
   if(state.customStats.length){
     custom = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">Custom stats</div>` +
@@ -332,6 +366,7 @@ function renderDetailRow(p){
   return `<tr class="detail-row"><td colspan="20">
     <div class="detail-grid">${stats}</div>
     <div class="detail-injuries"><strong style="color:var(--muted-2);">Injury notes:</strong> ${esc(injuries)}</div>
+    ${ranking}
     ${custom}
   </td></tr>`;
 }
@@ -453,13 +488,90 @@ function setCustomValue(id, key, value){
   persistCustomValues();
 }
 
+/* ---------------- Draft Sharks import ---------------- */
+
+function normalizeName(s){
+  return String(s||'').toLowerCase()
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/[.''`]/g, '')
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+let playerIndex = null;
+function getPlayerIndex(){
+  if(!playerIndex) playerIndex = PLAYERS.map(p => ({p, norm: normalizeName(p.name)}));
+  return playerIndex;
+}
+
+function matchPlayerByName(namePart){
+  const norm = normalizeName(namePart);
+  if(!norm) return null;
+  const index = getPlayerIndex();
+  let hit = index.find(x => x.norm === norm);
+  if(hit) return hit.p;
+  const prefixMatches = index.filter(x => norm === x.norm || norm.startsWith(x.norm + ' '));
+  if(prefixMatches.length){
+    prefixMatches.sort((a,b) => b.norm.length - a.norm.length);
+    return prefixMatches[0].p;
+  }
+  const looseMatches = index.filter(x => x.norm.length > 3 && norm.includes(x.norm));
+  if(looseMatches.length === 1) return looseMatches[0].p;
+  return null;
+}
+
+function parseDraftSharksText(text){
+  const lines = text.split(/\r?\n/);
+  const matched = [];
+  const unmatched = [];
+  lines.forEach(raw => {
+    const line = raw.trim();
+    if(!line) return;
+    let rank, namePart;
+    let m = line.match(/^#?\s*(\d{1,3})[.\)\-:,]?\s+(.+)$/);
+    if(m){ rank = parseInt(m[1],10); namePart = m[2]; }
+    else {
+      m = line.match(/^(.+?)[\s,]+#?(\d{1,3})\s*$/);
+      if(m){ namePart = m[1]; rank = parseInt(m[2],10); }
+    }
+    if(!rank || !namePart){ unmatched.push(raw); return; }
+    const player = matchPlayerByName(namePart);
+    if(player) matched.push({id: player.id, rank});
+    else unmatched.push(raw);
+  });
+  return {matched, unmatched};
+}
+
+function importDraftSharksText(text){
+  const {matched, unmatched} = parseDraftSharksText(text);
+  matched.forEach(m => { state.expertRank[m.id] = m.rank; });
+  persistExpertRank();
+  render();
+  let msg = `Imported ${matched.length} of ${matched.length + unmatched.length} lines.`;
+  if(unmatched.length){
+    msg += `\n\nCouldn't match:\n${unmatched.slice(0,15).join('\n')}${unmatched.length>15 ? '\n…' : ''}`;
+  }
+  alert(msg);
+}
+
+function setExpertRank(id, value){
+  id = Number(id);
+  const v = value.trim();
+  if(v === '') delete state.expertRank[id];
+  else state.expertRank[id] = Number(v);
+  persistExpertRank();
+  render();
+}
+
 function exportCsv(){
   const list = visiblePlayers();
-  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade', ...state.customStats.map(cs=>cs.label)];
+  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','DraftSharksRank','ADPDiff', ...state.customStats.map(cs=>cs.label)];
   const rows = list.map((p,i) => {
     const grade = offenseGrades[p.team] ? offenseGrades[p.team].grade : '';
     const custom = state.customStats.map(cs => (state.customValues[p.id]||{})[cs.key] || '');
-    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, p.projPts, p.stats.rec||'', grade, ...custom];
+    const diff = adpDiff(p);
+    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, p.projPts, p.stats.rec||'', grade, state.expertRank[p.id]||'', diff==null?'':diff, ...custom];
   });
   const csv = [headers, ...rows].map(r => r.map(v => {
     const s = String(v==null?'':v);
@@ -517,6 +629,29 @@ function attachEvents(){
     persistRemoved();
     render();
   });
+  document.getElementById('clearExpertBtn').addEventListener('click', () => {
+    if(!Object.keys(state.expertRank).length) return;
+    if(!confirm('Clear all Draft Sharks ranks?')) return;
+    state.expertRank = {};
+    persistExpertRank();
+    render();
+  });
+
+  const importOverlay = document.getElementById('importModalOverlay');
+  const importTextarea = document.getElementById('importTextarea');
+  document.getElementById('importDsBtn').addEventListener('click', () => {
+    importTextarea.value = '';
+    importOverlay.hidden = false;
+    importTextarea.focus();
+  });
+  document.getElementById('importCancelBtn').addEventListener('click', () => { importOverlay.hidden = true; });
+  importOverlay.addEventListener('click', e => { if(e.target === importOverlay) importOverlay.hidden = true; });
+  document.getElementById('importSubmitBtn').addEventListener('click', () => {
+    const text = importTextarea.value;
+    if(!text.trim()){ importOverlay.hidden = true; return; }
+    importOverlay.hidden = true;
+    importDraftSharksText(text);
+  });
 
   document.getElementById('posChips').addEventListener('click', e => {
     const btn = e.target.closest('[data-pos]');
@@ -553,9 +688,9 @@ function attachEvents(){
       const key = theadSort.dataset.sort;
       if(e.target.closest('[data-remove-stat]')) return;
       const actualKey = key === 'rank' ? 'adp' : key;
-      if(!['adp','name','pos','bye','projPts','rec'].includes(actualKey) && !actualKey.startsWith('custom:')) return;
+      if(!['adp','name','pos','bye','projPts','rec','expertRank','adpDiff'].includes(actualKey) && !actualKey.startsWith('custom:')) return;
       if(state.sortKey === actualKey) state.sortDir = state.sortDir==='asc' ? 'desc' : 'asc';
-      else { state.sortKey = actualKey; state.sortDir = actualKey==='name'||actualKey==='pos' ? 'asc' : 'desc'; if(actualKey==='adp') state.sortDir='asc'; }
+      else { state.sortKey = actualKey; state.sortDir = actualKey==='name'||actualKey==='pos' ? 'asc' : 'desc'; if(actualKey==='adp'||actualKey==='expertRank') state.sortDir='asc'; }
       renderPlayersTab();
       return;
     }
@@ -608,6 +743,10 @@ function attachEvents(){
     }
     if(e.target.classList.contains('custom-input')){
       setCustomValue(e.target.dataset.id, e.target.dataset.stat, e.target.value);
+      return;
+    }
+    if(e.target.classList.contains('expert-input')){
+      setExpertRank(e.target.dataset.id, e.target.value);
       return;
     }
   });

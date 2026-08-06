@@ -134,6 +134,14 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
 
 .empty-state{text-align:center;padding:40px 20px;color:var(--muted-2);font-size:13.5px;}
 
+/* ---------- modal ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(10,7,5,0.72);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.modal-overlay[hidden]{display:none;}
+.modal{max-width:640px;width:100%;max-height:85vh;overflow-y:auto;}
+.modal h3{font-family:'Teko',sans-serif;font-size:24px;font-weight:600;margin:0 0 10px;letter-spacing:0.3px;color:var(--rust-bright);}
+.modal textarea{width:100%;min-height:220px;resize:vertical;background:var(--panel-2);border:1.5px solid var(--line);color:var(--text);border-radius:7px;padding:11px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px;}
+
 @media(max-width:760px){
   .controls{gap:10px;}
   .detail-grid{grid-template-columns:repeat(2,1fr);}
@@ -191,9 +199,11 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
       <div class="ctl-spacer"></div>
       <div class="ctl-right">
         <button class="btn-secondary" id="addStatBtn">+ Custom stat</button>
+        <button class="btn-secondary" id="importDsBtn">Import Draft Sharks ranks</button>
         <button class="btn-secondary" id="exportCsvBtn">Export CSV</button>
         <button class="btn-secondary" id="printBtn">Print</button>
         <button class="btn-ghost" id="resetRemovedBtn">Reset kept list</button>
+        <button class="btn-ghost" id="clearExpertBtn">Clear Draft Sharks ranks</button>
       </div>
     </div>
 
@@ -244,6 +254,23 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
     </div>
     <div class="strategy-grid" id="strategyGrid"></div>
   </section>
+
+  <div class="modal-overlay" id="importModalOverlay" hidden>
+    <div class="modal card">
+      <h3>Import Draft Sharks ranks</h3>
+      <p class="offense-intro" style="margin-bottom:10px;">
+        Draft Sharks' full rankings are subscriber content, so paste your own list here rather than
+        expecting it to be pre-loaded. One player per line, e.g. <span class="mono">1. Ja'Marr Chase</span>
+        or <span class="mono">Ja'Marr Chase, 1</span> — team/position after the name is fine and gets ignored.
+        Matched players get a Draft Sharks rank and an ADP Diff (positive = value, negative = reach).
+      </p>
+      <textarea id="importTextarea" placeholder="1. Ja'Marr Chase&#10;2. Bijan Robinson&#10;3. Puka Nacua&#10;…"></textarea>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="importCancelBtn">Cancel</button>
+        <button class="btn-primary" id="importSubmitBtn">Import</button>
+      </div>
+    </div>
+  </div>
 
 </div>
 <script>window.__PLAYERS__ = __PLAYERS_JSON__;</script>

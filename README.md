@@ -53,6 +53,13 @@ in that browser's `localStorage`).
 - **Custom stats**: add any stat column you want tracked (e.g. target share,
   strength of schedule) and fill in values inline; stored alongside the
   built-in stats and included in CSV export.
+- **Draft Sharks (or any expert) rank vs. ADP**: enter a player's expert rank
+  one at a time, or paste in a whole ranked list at once ("Import Draft
+  Sharks ranks") — Draft Sharks' full rankings are subscriber content, so
+  this app doesn't ship with them pre-loaded, you bring your own list. Either
+  way, an "ADP Diff" column shows ADP minus expert rank: positive means the
+  market is drafting them later than the expert has them (a value/sleeper),
+  negative means earlier (a reach).
 - **Team Offense tab**: all 32 teams graded A+ through F from the combined
   season projection of their likely starting core (QB1, top 2 RBs, top 3
   WRs, TE1) — a gut-check for skill-position depth, streaming a QB/DST, or
