@@ -4,6 +4,17 @@
 'use strict';
 
 const PLAYERS = window.__PLAYERS__ || [];
+const API_BASE = 'https://league-draft-app.vercel.app';
+
+// Points-per-unit scoring. K/DST aren't included — their season totals here are
+// aggregate (no FG-distance or points-allowed tiers), so there's nothing to
+// recompute; their projection stays fixed regardless of these settings.
+const DEFAULT_SCORING = {
+  reception: 0.5,
+  passYdPt: 0.04, passTD: 4,
+  rushYdPt: 0.1, rushTD: 6,
+  recYdPt: 0.1, recTD: 6,
+};
 
 const POS_ORDER = ['QB','RB','WR','TE','DST','K'];
 const POS_STATS = {
@@ -84,6 +95,7 @@ const LS = {
   strategy: LS_PREFIX+'strategy_v1',
   numTeams: LS_PREFIX+'num_teams_v1',
   expertRank: LS_PREFIX+'expert_rank_v1',
+  scoring: LS_PREFIX+'scoring_v1',
 };
 
 function loadJSON(key, fallback){
@@ -99,6 +111,7 @@ const state = {
   strategy: loadJSON(LS.strategy, 'bpa'),
   numTeams: loadJSON(LS.numTeams, 12),
   expertRank: loadJSON(LS.expertRank, {}), // {playerId: rank} — commissioner-entered Draft Sharks (or any expert) rank
+  scoring: Object.assign({}, DEFAULT_SCORING, loadJSON(LS.scoring, {})),
   search: '',
   pos: 'ALL',
   team: 'ALL',
@@ -116,6 +129,7 @@ function persistCustomValues(){ saveJSON(LS.customValues, state.customValues); }
 function persistStrategy(){ saveJSON(LS.strategy, state.strategy); }
 function persistNumTeams(){ saveJSON(LS.numTeams, state.numTeams); }
 function persistExpertRank(){ saveJSON(LS.expertRank, state.expertRank); }
+function persistScoring(){ saveJSON(LS.scoring, state.scoring); }
 
 function esc(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -129,23 +143,86 @@ function fmt(n){
 
 /* ---------------- derived data ---------------- */
 
+function round1(n){ return Math.round(n*10)/10; }
+
+// Recomputes season points from the raw stat line using state.scoring, so the
+// PPR value (and anything imported from ESPN) is reflected everywhere. K/DST
+// have no per-unit breakdown available (aggregate FG/points-allowed only), so
+// their baked-in projection is used as-is.
+function computeProjPts(p){
+  const s = p.stats || {};
+  const sc = state.scoring;
+  if(p.pos === 'QB'){
+    return round1((s.passYds||0)*sc.passYdPt + (s.passTD||0)*sc.passTD + (s.rushYds||0)*sc.rushYdPt + (s.rushTD||0)*sc.rushTD);
+  }
+  if(p.pos === 'RB'){
+    return round1((s.rushYds||0)*sc.rushYdPt + (s.rushTD||0)*sc.rushTD + (s.rec||0)*sc.reception + (s.recYds||0)*sc.recYdPt + (s.recTD||0)*sc.recTD);
+  }
+  if(p.pos === 'WR'){
+    return round1((s.rec||0)*sc.reception + (s.recYds||0)*sc.recYdPt + (s.recTD||0)*sc.recTD + (s.rushYds||0)*sc.rushYdPt);
+  }
+  if(p.pos === 'TE'){
+    return round1((s.rec||0)*sc.reception + (s.recYds||0)*sc.recYdPt + (s.recTD||0)*sc.recTD);
+  }
+  return p.projPts;
+}
+
+// Tier colors run a single hue (the Corten rust) from bright/saturated at
+// tier 1 down to dark/muted at the deepest tier, so the ramp itself reads as
+// "talent fading out" rather than an arbitrary rainbow.
+function tierHsl(tier){
+  const idx = Math.max(0, tier-1);
+  return {
+    hue: Math.max(0, 30 - idx*3),
+    sat: Math.max(35, 70 - idx*4),
+    light: Math.max(30, 62 - idx*4),
+  };
+}
+function tierColor(tier){ const c = tierHsl(tier); return `hsl(${c.hue},${c.sat}%,${c.light}%)`; }
+function tierColorAlpha(tier, a){ const c = tierHsl(tier); return `hsla(${c.hue},${c.sat}%,${c.light}%,${a})`; }
+
+// 1D k-means over point value (not rank) — real drop-offs pull into their own
+// cluster, and near-linear stretches (this dataset's late-round formula
+// curves are close to linear) still split into evenly-spaced tiers instead
+// of collapsing into one, which a pure gap-threshold approach would do.
+function kmeansTiers(pts, k){
+  const n = pts.length;
+  k = Math.max(1, Math.min(k, n));
+  if(k <= 1) return pts.map(() => 1);
+  const min = Math.min(...pts), max = Math.max(...pts);
+  let centroids = Array.from({length:k}, (_,i) => max - (i+0.5)*(max-min)/k);
+  let assign = new Array(n).fill(0);
+  for(let iter=0; iter<40; iter++){
+    let changed = false;
+    for(let i=0;i<n;i++){
+      let best = 0, bestDist = Infinity;
+      for(let c=0;c<k;c++){
+        const d = Math.abs(pts[i]-centroids[c]);
+        if(d < bestDist){ bestDist = d; best = c; }
+      }
+      if(assign[i] !== best){ assign[i] = best; changed = true; }
+    }
+    const sums = new Array(k).fill(0), counts = new Array(k).fill(0);
+    for(let i=0;i<n;i++){ sums[assign[i]] += pts[i]; counts[assign[i]]++; }
+    for(let c=0;c<k;c++){ if(counts[c] > 0) centroids[c] = sums[c]/counts[c]; }
+    if(!changed) break;
+  }
+  const order = centroids.map((c,i) => ({c,i})).sort((a,b) => b.c-a.c);
+  const clusterToTier = {};
+  order.forEach((o,rank) => { clusterToTier[o.i] = rank+1; });
+  return pts.map((_,i) => clusterToTier[assign[i]]);
+}
+
 function computeTiers(players){
   const byPos = {};
   players.forEach(p => { (byPos[p.pos] = byPos[p.pos]||[]).push(p); });
   const tierMap = {};
   Object.keys(byPos).forEach(pos => {
-    const list = byPos[pos].slice().sort((a,b)=>b.projPts-a.projPts);
-    const gaps = [];
-    for(let i=1;i<list.length;i++) gaps.push(list[i-1].projPts - list[i].projPts);
-    const avgGap = gaps.length ? gaps.reduce((a,b)=>a+b,0)/gaps.length : 0;
-    let tier = 1;
-    list.forEach((p,i) => {
-      if(i>0){
-        const gap = list[i-1].projPts - p.projPts;
-        if(gap > avgGap*1.8 && gap > 1) tier++;
-      }
-      tierMap[p.id] = tier;
-    });
+    const list = byPos[pos].slice().sort((a,b)=>computeProjPts(b)-computeProjPts(a));
+    const pts = list.map(computeProjPts);
+    const k = Math.max(2, Math.min(8, Math.round(list.length/9) || 2));
+    const tiers = kmeansTiers(pts, k);
+    list.forEach((p,i) => { tierMap[p.id] = tiers[i]; });
   });
   return tierMap;
 }
@@ -182,12 +259,12 @@ function computeOffenseGrades(players){
   });
   const rows = Object.keys(byTeam).map(team => {
     const list = byTeam[team];
-    const qb = list.filter(p=>p.pos==='QB').sort((a,b)=>b.projPts-a.projPts)[0];
-    const rbs = list.filter(p=>p.pos==='RB').sort((a,b)=>b.projPts-a.projPts).slice(0,2);
-    const wrs = list.filter(p=>p.pos==='WR').sort((a,b)=>b.projPts-a.projPts).slice(0,3);
-    const te = list.filter(p=>p.pos==='TE').sort((a,b)=>b.projPts-a.projPts)[0];
+    const qb = list.filter(p=>p.pos==='QB').sort((a,b)=>computeProjPts(b)-computeProjPts(a))[0];
+    const rbs = list.filter(p=>p.pos==='RB').sort((a,b)=>computeProjPts(b)-computeProjPts(a)).slice(0,2);
+    const wrs = list.filter(p=>p.pos==='WR').sort((a,b)=>computeProjPts(b)-computeProjPts(a)).slice(0,3);
+    const te = list.filter(p=>p.pos==='TE').sort((a,b)=>computeProjPts(b)-computeProjPts(a))[0];
     const core = [qb, ...rbs, ...wrs, te].filter(Boolean);
-    const score = core.reduce((s,p)=>s+p.projPts,0);
+    const score = core.reduce((s,p)=>s+computeProjPts(p),0);
     return {team, score, core};
   });
   rows.sort((a,b)=>b.score-a.score);
@@ -243,6 +320,7 @@ function visiblePlayers(){
   list = list.slice().sort((a,b) => {
     let av, bv;
     if(state.sortKey === 'rec'){ av = (a.stats.rec||0); bv = (b.stats.rec||0); }
+    else if(state.sortKey === 'projPts'){ av = computeProjPts(a); bv = computeProjPts(b); }
     else if(state.sortKey === 'expertRank'){ av = Number(state.expertRank[a.id]) || 0; bv = Number(state.expertRank[b.id]) || 0; }
     else if(state.sortKey === 'adpDiff'){ av = adpDiff(a) || 0; bv = adpDiff(b) || 0; }
     else if(state.sortKey.startsWith('custom:')){
@@ -266,6 +344,7 @@ function posBadgeStyle(pos){
 function renderHead(){
   const tr = document.getElementById('theadRow');
   const cols = [
+    {key:'stripe', label:''},
     {key:'sel', label:''},
     {key:'rank', label:'#'},
     {key:'tier', label:'Tier'},
@@ -280,6 +359,7 @@ function renderHead(){
     {key:'adpDiff', label:'Diff'},
   ];
   let html = cols.map(c => {
+    if(c.key==='stripe') return `<th style="width:4px;padding:0;"></th>`;
     if(c.key==='sel') return `<th style="width:26px;"></th>`;
     const sorted = state.sortKey===c.key || (c.key==='rank' && state.sortKey==='adp');
     const title = c.key==='expertRank' ? ' title="Draft Sharks (or any expert source) rank — edit inline, or use Import Draft Sharks ranks"'
@@ -299,14 +379,16 @@ function renderRow(p, idx){
   const tier = tierMap[p.id];
   const isSelected = state.selected.has(p.id);
   const isRemoved = state.removed.has(p.id);
+  const tColor = tierColor(tier);
   let row = `<tr data-id="${p.id}" class="${state.expanded===p.id?'expanded':''}">`;
+  row += `<td class="tier-stripe" style="background:${tColor};"></td>`;
   row += `<td><input type="checkbox" class="rowcheck" data-id="${p.id}" ${isSelected?'checked':''}></td>`;
   row += `<td class="mono">${idx+1}</td>`;
-  row += `<td><span class="tier-badge">T${tier}</span></td>`;
+  row += `<td><span class="tier-badge" style="color:${tColor};border-color:${tColor};" title="Tier ${tier} — grouped by where ${esc(p.pos)} talent drops off">T${tier}</span></td>`;
   row += `<td><div class="player-cell" data-toggle="${p.id}"><span class="pname">${esc(p.name)}${isRemoved?' <span style="color:var(--bad);font-size:11px;">(kept)</span>':''}</span><span class="pmeta">${esc(p.team)} · Bye ${p.bye} · ${esc(p.posRank)} · ADP ${p.adp}</span></div></td>`;
   row += `<td><span class="pos-badge" style="${posBadgeStyle(p.pos)}">${esc(p.pos)}</span></td>`;
   row += `<td class="mono">${p.bye}</td>`;
-  row += `<td class="num mono">${fmt(p.projPts)}</td>`;
+  row += `<td class="num mono">${fmt(computeProjPts(p))}</td>`;
   row += `<td class="num mono">${p.stats.rec!=null ? fmt(p.stats.rec) : '—'}</td>`;
   if(gradeInfo){
     row += `<td><span class="grade-badge" style="color:${gradeColorVar(gradeInfo.grade)};border:1px solid ${gradeColorVar(gradeInfo.grade)};" title="Rank #${gradeInfo.rank} of 32 projected offenses">${gradeInfo.grade}</span></td>`;
@@ -347,7 +429,7 @@ function renderDetailRow(p){
     <div class="detail-stat"><span class="dlabel">${esc(label)}</span><span class="dval">${fmt(p.stats[key])}</span></div>
   `).join('');
   stats += `<div class="detail-stat"><span class="dlabel">Age</span><span class="dval">${p.age||'—'}</span></div>`;
-  stats += `<div class="detail-stat"><span class="dlabel">Proj Pts</span><span class="dval">${fmt(p.projPts)}</span></div>`;
+  stats += `<div class="detail-stat"><span class="dlabel">Proj Pts</span><span class="dval">${fmt(computeProjPts(p))}</span></div>`;
   const injuries = (p.injuries && p.injuries.length) ? p.injuries.join('; ') : 'No notable injury history on record.';
   const diff = adpDiff(p);
   const ranking = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">Draft Sharks (or any expert) rank</div>
@@ -363,7 +445,7 @@ function renderDetailRow(p){
         return `<div class="cfield"><label>${esc(cs.label)}</label><input type="text" class="mono custom-input" data-id="${p.id}" data-stat="${esc(cs.key)}" value="${esc(val==null?'':val)}"></div>`;
       }).join('') + `</div>`;
   }
-  return `<tr class="detail-row"><td colspan="20">
+  return `<tr class="detail-row"><td colspan="40">
     <div class="detail-grid">${stats}</div>
     <div class="detail-injuries"><strong style="color:var(--muted-2);">Injury notes:</strong> ${esc(injuries)}</div>
     ${ranking}
@@ -401,6 +483,12 @@ function renderBulkBar(){
   document.getElementById('bulkCount').textContent = state.selected.size;
 }
 
+function renderTierDivider(tier, list){
+  const inTier = list.filter(p => tierMap[p.id] === tier).map(computeProjPts);
+  const lo = Math.min(...inTier), hi = Math.max(...inTier);
+  return `<tr class="tier-divider"><td colspan="40" style="border-left:4px solid ${tierColor(tier)};background:${tierColorAlpha(tier,0.12)};">Tier ${tier}<span class="trange">${fmt(lo)}–${fmt(hi)} pts</span></td></tr>`;
+}
+
 function renderPlayersTab(){
   tierMap = computeTiers(PLAYERS);
   renderPosChips();
@@ -408,7 +496,22 @@ function renderPlayersTab(){
   renderHead();
   const list = visiblePlayers();
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = list.length ? list.map((p,i) => renderRow(p,i)).join('') : `<tr><td colspan="20"><div class="empty-state">No players match these filters.</div></td></tr>`;
+  if(!list.length){
+    tbody.innerHTML = `<tr><td colspan="40"><div class="empty-state">No players match these filters.</div></td></tr>`;
+  } else {
+    const showDividers = state.pos !== 'ALL' && (state.sortKey === 'adp' || state.sortKey === 'projPts');
+    let html = '';
+    let lastTier = null;
+    list.forEach((p,i) => {
+      const t = tierMap[p.id];
+      if(showDividers && t !== lastTier){
+        html += renderTierDivider(t, list);
+        lastTier = t;
+      }
+      html += renderRow(p,i);
+    });
+    tbody.innerHTML = html;
+  }
   renderRemovedSection();
   renderBulkBar();
 }
@@ -555,6 +658,61 @@ function importDraftSharksText(text){
   alert(msg);
 }
 
+/* ---------------- ESPN league import ---------------- */
+
+async function importEspnLeague(){
+  const statusEl = document.getElementById('espnStatus2');
+  const overlay = document.getElementById('espnModalOverlay');
+  const leagueId = document.getElementById('espnLeagueId2').value.trim();
+  const season = document.getElementById('espnSeason2').value.trim() || '2026';
+  const espnS2 = document.getElementById('espnS2b').value.trim();
+  const swid = document.getElementById('espnSwidB').value.trim();
+  const setStatus = (msg, color) => { statusEl.textContent = msg; statusEl.style.color = color; };
+
+  if(!leagueId){ setStatus('Enter your ESPN league ID first.', 'var(--bad)'); return; }
+
+  const btn = document.getElementById('espnSubmitBtn2');
+  btn.disabled = true; btn.textContent = 'Importing…';
+  setStatus('Contacting ESPN…', 'var(--muted)');
+  try{
+    const res = await fetch(`${API_BASE}/api/espn`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({leagueId, season, espnS2, swid}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok){
+      setStatus(data.error || `ESPN import failed (${res.status}).`, 'var(--bad)');
+      return;
+    }
+
+    if(data.numTeams){
+      state.numTeams = Math.min(16, Math.max(8, data.numTeams));
+      persistNumTeams();
+      document.getElementById('numTeams').value = state.numTeams;
+    }
+    const sc = data.scoring || {};
+    Object.keys(sc).forEach(k => { if(typeof sc[k] === 'number') state.scoring[k] = sc[k]; });
+    persistScoring();
+    document.getElementById('pprInput').value = state.scoring.reception;
+    render();
+
+    const parts = [];
+    if(sc.reception != null) parts.push(`${sc.reception} PPR`);
+    if(data.roster){
+      const r = data.roster;
+      const rosterStr = ['QB','RB','WR','TE','FLEX','DST','K','BN'].filter(k => r[k]).map(k => `${r[k]}${k}`).join('/');
+      if(rosterStr) parts.push(rosterStr);
+    }
+    setStatus(`Imported "${data.leagueName}" — ${state.numTeams} teams${parts.length ? ', ' + parts.join(', ') : ''}. Scoring ESPN didn't report keeps this app's current value.`, 'var(--good)');
+    setTimeout(() => { overlay.hidden = true; }, 2600);
+  }catch(e){
+    setStatus('Could not reach the import service. Try again in a moment.', 'var(--bad)');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Import';
+  }
+}
+
 function setExpertRank(id, value){
   id = Number(id);
   const v = value.trim();
@@ -571,7 +729,7 @@ function exportCsv(){
     const grade = offenseGrades[p.team] ? offenseGrades[p.team].grade : '';
     const custom = state.customStats.map(cs => (state.customValues[p.id]||{})[cs.key] || '');
     const diff = adpDiff(p);
-    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, p.projPts, p.stats.rec||'', grade, state.expertRank[p.id]||'', diff==null?'':diff, ...custom];
+    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, computeProjPts(p), p.stats.rec||'', grade, state.expertRank[p.id]||'', diff==null?'':diff, ...custom];
   });
   const csv = [headers, ...rows].map(r => r.map(v => {
     const s = String(v==null?'':v);
@@ -606,6 +764,17 @@ function attachEvents(){
     render();
   });
   document.getElementById('numTeams').value = state.numTeams;
+
+  document.getElementById('pprInput').addEventListener('change', e => {
+    let v = parseFloat(e.target.value);
+    if(Number.isNaN(v)) v = 0.5;
+    v = Math.min(2, Math.max(0, v));
+    e.target.value = v;
+    state.scoring.reception = v;
+    persistScoring();
+    render();
+  });
+  document.getElementById('pprInput').value = state.scoring.reception;
 
   document.getElementById('searchInput').addEventListener('input', e => {
     state.search = e.target.value;
@@ -652,6 +821,18 @@ function attachEvents(){
     importOverlay.hidden = true;
     importDraftSharksText(text);
   });
+
+  const espnOverlay = document.getElementById('espnModalOverlay');
+  document.getElementById('importEspnBtn').addEventListener('click', () => {
+    document.getElementById('espnStatus2').textContent = '';
+    espnOverlay.hidden = false;
+  });
+  document.getElementById('espnCancelBtn2').addEventListener('click', () => { espnOverlay.hidden = true; });
+  espnOverlay.addEventListener('click', e => { if(e.target === espnOverlay) espnOverlay.hidden = true; });
+  document.getElementById('espnPrivate2').addEventListener('change', e => {
+    document.getElementById('espnPrivateFields2').hidden = !e.target.checked;
+  });
+  document.getElementById('espnSubmitBtn2').addEventListener('click', importEspnLeague);
 
   document.getElementById('posChips').addEventListener('click', e => {
     const btn = e.target.closest('[data-pos]');

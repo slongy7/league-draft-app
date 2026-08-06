@@ -92,6 +92,9 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
 .player-cell .pmeta{font-size:11px;color:var(--muted-2);}
 .pos-badge{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;color:#171310;}
 .tier-badge{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:2px 6px;}
+.tier-stripe{width:4px;padding:0 !important;}
+.tier-divider td{padding:9px 14px;font-family:'Teko',sans-serif;font-size:16px;letter-spacing:1.4px;text-transform:uppercase;font-weight:600;color:var(--text);border-bottom:1px solid var(--line);}
+.tier-divider .trange{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0;text-transform:none;font-weight:500;color:var(--muted);margin-left:8px;}
 .grade-badge{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12.5px;padding:2px 8px;border-radius:5px;}
 .fit-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:12px;white-space:nowrap;}
 .fit-priority{background:rgba(138,154,92,0.18);color:var(--good);}
@@ -141,6 +144,12 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
 .modal h3{font-family:'Teko',sans-serif;font-size:24px;font-weight:600;margin:0 0 10px;letter-spacing:0.3px;color:var(--rust-bright);}
 .modal textarea{width:100%;min-height:220px;resize:vertical;background:var(--panel-2);border:1.5px solid var(--line);color:var(--text);border-radius:7px;padding:11px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.5;}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px;}
+.modal .field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+.modal .field label{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700;}
+.modal .field input{width:100%;}
+.modal .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:600px){.modal .row2{grid-template-columns:1fr;}}
+.espn-status{font-size:12.5px;line-height:1.5;}
 
 @media(max-width:760px){
   .controls{gap:10px;}
@@ -164,9 +173,10 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
   <header class="topbar">
     <div class="brand">
       <div class="mark">CHEAT SHEET<br><span>GENERATOR</span></div>
-      <div class="sub">Fantasy Football Draft Prep · PPR</div>
+      <div class="sub">Fantasy Football Draft Prep · 0.5 PPR default</div>
     </div>
     <div class="topbar-right">
+      <label>PPR <input type="number" id="pprInput" min="0" max="2" step="0.1" value="0.5" style="width:56px;"></label>
       <label>League size <input type="number" id="numTeams" min="8" max="16" value="12"></label>
     </div>
   </header>
@@ -200,6 +210,7 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
       <div class="ctl-right">
         <button class="btn-secondary" id="addStatBtn">+ Custom stat</button>
         <button class="btn-secondary" id="importDsBtn">Import Draft Sharks ranks</button>
+        <button class="btn-secondary" id="importEspnBtn">Import ESPN league rules</button>
         <button class="btn-secondary" id="exportCsvBtn">Export CSV</button>
         <button class="btn-secondary" id="printBtn">Print</button>
         <button class="btn-ghost" id="resetRemovedBtn">Reset kept list</button>
@@ -268,6 +279,34 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
       <div class="modal-actions">
         <button class="btn-secondary" id="importCancelBtn">Cancel</button>
         <button class="btn-primary" id="importSubmitBtn">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="espnModalOverlay" hidden>
+    <div class="modal card">
+      <h3>Import league rules from ESPN</h3>
+      <p class="offense-intro" style="margin-bottom:14px;">
+        Pulls your league's team count, roster format, and scoring settings (points per
+        reception/yard/touchdown) straight from ESPN — best-effort, since ESPN's league API
+        is unofficial and undocumented. Any scoring value ESPN doesn't report is left at
+        this app's current setting.
+      </p>
+      <div class="row2">
+        <div class="field"><label for="espnLeagueId2">ESPN League ID</label><input type="text" id="espnLeagueId2" placeholder="e.g. 123456789" inputmode="numeric"></div>
+        <div class="field"><label for="espnSeason2">Season</label><input type="text" id="espnSeason2" placeholder="2026" value="2026" inputmode="numeric"></div>
+      </div>
+      <div class="checkbox-field" style="margin:2px 0 12px;"><input type="checkbox" id="espnPrivate2"> <span>Private league (needs cookies)</span></div>
+      <div class="row2" id="espnPrivateFields2" hidden>
+        <div class="field"><label for="espnS2b">espn_s2</label><input type="text" id="espnS2b" placeholder="long cookie value"></div>
+        <div class="field"><label for="espnSwidB">SWID</label><input type="text" id="espnSwidB" placeholder="{XXXXXXXX-XXXX-...}"></div>
+      </div>
+      <div class="modal-actions" style="justify-content:space-between;align-items:center;">
+        <div class="espn-status" id="espnStatus2"></div>
+        <div style="display:flex;gap:10px;flex-shrink:0;">
+          <button class="btn-secondary" id="espnCancelBtn2">Cancel</button>
+          <button class="btn-primary" id="espnSubmitBtn2">Import</button>
+        </div>
       </div>
     </div>
   </div>

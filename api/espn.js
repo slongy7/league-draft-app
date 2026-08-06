@@ -1,15 +1,29 @@
 // Proxies ESPN's (unofficial, undocumented) fantasy football league API so the
-// browser can import team names/roster settings without hitting CORS — and so
-// private-league cookies (espn_s2/SWID) are sent as a real Cookie header,
-// which `fetch` from a web page is not allowed to set itself.
+// browser can import team names/roster/scoring settings without hitting CORS
+// — and so private-league cookies (espn_s2/SWID) are sent as a real Cookie
+// header, which `fetch` from a web page is not allowed to set itself.
 //
 // POST /api/espn  { leagueId, season, espnS2?, swid? }
-//   -> { leagueName, numTeams, teams:[{id,name}], roster:{QB,RB,WR,TE,FLEX,DST,K,BN} }
+//   -> { leagueName, numTeams, teams:[{id,name}], roster:{QB,RB,WR,TE,FLEX,DST,K,BN},
+//        scoring:{reception?,passYdPt?,passTD?,rushYdPt?,rushTD?,recYdPt?,recTD?} }
 //
-// Nothing here is persisted — cookies are forwarded to ESPN for this one
-// request only and never written to storage or logs.
+// `scoring` is derived from ESPN's scoringItems (statId -> points-per-unit),
+// keyed by a handful of well-known-but-unofficial stat IDs — only the keys
+// ESPN actually reported are included, so callers should treat missing keys
+// as "unknown" rather than zero. Nothing here is persisted — cookies are
+// forwarded to ESPN for this one request only and never written to storage
+// or logs.
 
 const SLOT_MAP = {'0':'QB','2':'RB','4':'WR','6':'TE','23':'FLEX','16':'DST','17':'K','20':'BN'};
+
+// Reverse-engineered from public ESPN fantasy API documentation projects —
+// undocumented and best-effort, like the rest of this integration.
+const SCORING_STAT_MAP = {
+  '3': 'passYdPt', '4': 'passTD',
+  '24': 'rushYdPt', '25': 'rushTD',
+  '42': 'recYdPt', '43': 'recTD',
+  '53': 'reception',
+};
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -76,11 +90,19 @@ module.exports = async function handler(req, res) {
       if (key && count > 0) roster[key] = count;
     });
 
+    const scoringItems = (data.settings && data.settings.scoringSettings && data.settings.scoringSettings.scoringItems) || [];
+    const scoring = {};
+    scoringItems.forEach(item => {
+      const key = SCORING_STAT_MAP[String(item.statId)];
+      if (key && typeof item.points === 'number') scoring[key] = item.points;
+    });
+
     return res.status(200).json({
       leagueName: (data.settings && data.settings.name) || 'ESPN League',
       numTeams: teams.length,
       teams,
       roster,
+      scoring,
     });
   } catch (e) {
     console.error('espn import error', e);

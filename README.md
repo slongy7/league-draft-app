@@ -44,9 +44,15 @@ but otherwise fully independent (no room, no live sync — everything is kept
 in that browser's `localStorage`).
 
 - **Players tab**: searchable/filterable/sortable player list with tiers
-  (auto-computed from projected-point gaps within each position), season
-  projected points, and receptions called out for every RB/WR/TE (PPR).
-  Click a player to expand their full stat line, age, and injury notes.
+  (auto-clustered by projected points within each position — a color ramp
+  from bright to muted marks each tier, with divider bars showing the point
+  range when a single position is filtered), season projected points, and
+  receptions called out for every RB/WR/TE. Click a player to expand their
+  full stat line, age, and injury notes.
+- **Scoring**: defaults to half-PPR (0.5 pts/reception); the PPR field next
+  to League size recomputes every RB/WR/TE/QB projection, tier, and offense
+  grade live. K/DST projections don't move — the season stats here are
+  aggregate totals with no FG-distance or points-allowed tiers to rescale.
 - **Keeper leagues**: mark any player "kept" (individually or in bulk via
   checkboxes) to pull them out of the pool — they collapse into a "Kept /
   unavailable" section and can be restored any time.
@@ -60,6 +66,11 @@ in that browser's `localStorage`).
   way, an "ADP Diff" column shows ADP minus expert rank: positive means the
   market is drafting them later than the expert has them (a value/sleeper),
   negative means earlier (a reach).
+- **Import league rules from ESPN**: pulls team count, roster format, and
+  scoring (points per reception/yard/touchdown) from an existing ESPN league
+  via `api/espn.js` — same best-effort proxy the draft room uses, public or
+  private (with `espn_s2`/`SWID` cookies). Any scoring value ESPN doesn't
+  report is left at its current setting rather than being reset.
 - **Team Offense tab**: all 32 teams graded A+ through F from the combined
   season projection of their likely starting core (QB1, top 2 RBs, top 3
   WRs, TE1) — a gut-check for skill-position depth, streaming a QB/DST, or
