@@ -380,7 +380,8 @@ function renderRow(p, idx){
   const isSelected = state.selected.has(p.id);
   const isRemoved = state.removed.has(p.id);
   const tColor = tierColor(tier);
-  let row = `<tr data-id="${p.id}" class="${state.expanded===p.id?'expanded':''}">`;
+  const rowBg = tierColorAlpha(tier, state.expanded===p.id ? 0.22 : 0.10);
+  let row = `<tr data-id="${p.id}" class="${state.expanded===p.id?'expanded':''}" style="background:${rowBg};">`;
   row += `<td class="tier-stripe" style="background:${tColor};"></td>`;
   row += `<td><input type="checkbox" class="rowcheck" data-id="${p.id}" ${isSelected?'checked':''}></td>`;
   row += `<td class="mono">${idx+1}</td>`;
