@@ -431,6 +431,25 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       <div id="setupSkipList" style="margin-top:16px;"></div>
     </div>
 
+    <div class="card">
+      <h3>Custom stats (optional)</h3>
+      <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
+        Add your own stat columns — advanced metrics, league-specific notes, whatever you
+        want tracked — before creating the room (or starting a mock draft). Once added, fill
+        in a value for any player from that player's detail popup in the draft room.
+      </p>
+      <div class="row2" style="align-items:end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Stat name</label>
+          <input type="text" id="setupCustomStatName" placeholder="e.g. Strength of schedule">
+        </div>
+        <div>
+          <button class="btn-secondary" id="setupAddCustomStatBtn" style="width:100%;">+ Add stat column</button>
+        </div>
+      </div>
+      <div id="setupCustomStatsList" style="margin-top:16px;"></div>
+    </div>
+
     <p style="color:var(--muted);font-size:13px;margin:0 0 12px;">
       Mock drafts run entirely on this device — no invite link needed. Every other team
       drafts for itself (best player available) so you can practice instantly and re-run it

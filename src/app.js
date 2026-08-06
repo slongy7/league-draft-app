@@ -275,8 +275,10 @@ function buildSetupForm(){
   buildRosterConfigInputs();
   setupKeepers = [];
   setupSkips = [];
+  setupCustomStatDefs = [];
   renderSetupKeepers();
   renderSetupSkips();
+  renderSetupCustomStats();
 }
 
 // Attached once (not inside buildSetupForm, which reruns every time the
@@ -460,6 +462,47 @@ window.removeSetupSkip = function(idx){
   renderSetupSkips();
 };
 
+/* ---------------- setup-screen custom stats (staged pre-creation) ---------------- */
+
+let setupCustomStatDefs = [];
+
+function slugifyStatKeyAgainst(label, existingDefs){
+  const base = label.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'stat';
+  let key = base, n = 1;
+  const existing = new Set(existingDefs.map(d=>d.key));
+  while(existing.has(key)) key = `${base}_${++n}`;
+  return key;
+}
+
+function renderSetupCustomStats(){
+  const wrap = document.getElementById('setupCustomStatsList');
+  wrap.innerHTML = setupCustomStatDefs.length ? setupCustomStatDefs.map((d,i)=>`
+    <div class="cs-def-row">
+      <span class="csk">${escapeHtml(d.label)}</span>
+      <button class="kx-remove" onclick="removeSetupCustomStat(${i})">Remove</button>
+    </div>
+  `).join('') : `<div class="kx-empty">No custom stats yet — add one above.</div>`;
+}
+
+document.getElementById('setupAddCustomStatBtn').addEventListener('click', ()=>{
+  const input = document.getElementById('setupCustomStatName');
+  const label = input.value.trim();
+  if(!label){ toast('Enter a name for the stat.'); return; }
+  if(setupCustomStatDefs.some(d=>d.label.toLowerCase()===label.toLowerCase())){
+    toast('That stat already exists.'); return;
+  }
+  const key = slugifyStatKeyAgainst(label, setupCustomStatDefs);
+  setupCustomStatDefs.push({key, label});
+  input.value = '';
+  renderSetupCustomStats();
+  toast('Custom stat added.');
+});
+
+window.removeSetupCustomStat = function(idx){
+  setupCustomStatDefs.splice(idx,1);
+  renderSetupCustomStats();
+};
+
 function ordinalSuffix(n){
   const s = ['th','st','nd','rd'], v = n % 100;
   return s[(v-20)%10] || s[v] || s[0];
@@ -582,7 +625,7 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
   try{
     const {numTeams, teamNames, roster, base} = readSetupForm();
 
-    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, commissionerToken: genToken(), customStats: {defs:[], values:{}}};
+    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, commissionerToken: genToken(), customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}};
     const res = await storageSet(CFG_KEY, CONFIG, true);
     if(!res.ok){ toast('Could not create room: ' + res.error); return; }
     COMMISH_TOKEN = CONFIG.commissionerToken;
@@ -612,7 +655,7 @@ document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
     [base[curPos], base[slotPos]] = [base[slotPos], base[curPos]];
 
     MOCK = true;
-    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs:[], values:{}}};
+    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}};
     await storageSet(CFG_KEY, CONFIG, true);
     DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips: setupSkips.map(k=>({...k})), version:1};
     for(let i=0;i<numTeams;i++) DRAFT.claims[i] = i===0 ? teamNames[0] : 'CPU';
@@ -1003,7 +1046,7 @@ window.removeCustomStat = async function(idx){
 };
 
 async function setCustomStatValue(playerId, key, value){
-  if(!isCommissioner()){ toast('Only the commissioner can edit custom stats.'); return; }
+  if(!isCommissioner() && !MOCK){ toast('Only the commissioner can edit custom stats.'); return; }
   CONFIG = await storageGet(CFG_KEY, true) || CONFIG;
   if(!CONFIG.customStats) CONFIG.customStats = {defs:[], values:{}};
   if(!CONFIG.customStats.values[playerId]) CONFIG.customStats.values[playerId] = {};
@@ -1049,7 +1092,7 @@ function renderPlayerModal(){
     ? `<ul class="injury-list">${injuries.map(i=>`<li>🩹 ${escapeHtml(i)}</li>`).join('')}</ul>`
     : `<div class="injury-none">No major injuries on record.</div>`;
 
-  const canEdit = isCommissioner();
+  const canEdit = isCommissioner() || MOCK;
   const defs = (CONFIG.customStats && CONFIG.customStats.defs) || [];
   const values = (CONFIG.customStats && CONFIG.customStats.values && CONFIG.customStats.values[p.id]) || {};
   const customHtml = defs.length ? defs.map(d=>`
@@ -1058,7 +1101,7 @@ function renderPlayerModal(){
       <input type="text" value="${escapeHtml(values[d.key]!==undefined?String(values[d.key]):'')}"
         ${canEdit?'':'disabled'} data-stat-key="${d.key}" placeholder="—">
     </div>
-  `).join('') : `<div class="injury-none">No custom stats defined yet. Add some from the lobby.</div>`;
+  `).join('') : `<div class="injury-none">No custom stats defined yet. Add some from ${MOCK ? 'the setup screen' : 'the lobby'}.</div>`;
 
   card.innerHTML = `
     <button class="modal-close" onclick="closePlayerModal()">✕</button>

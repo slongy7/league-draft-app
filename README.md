@@ -27,7 +27,10 @@ This app ships two ways:
   - Pick restrictions (block a team from picking in a specific round — can also be set on
     the setup screen before creating the room, or added later from the lobby; works for
     mock drafts too)
-  - Custom stat columns (add any stat you want tracked, then fill in a value per player)
+  - Custom stat columns (add any stat you want tracked, then fill in a value per player from
+    that player's detail popup — columns can be defined on the setup screen before creating
+    the room, or added later from the lobby; also works for mock drafts, where you can edit
+    values yourself since there's no separate commissioner)
 - Configurable roster format (QB/RB/WR/TE/FLEX/DST/K counts, bench size)
 - Searchable/filterable player pool (2026 season ADP data, ~258 players) with age, injury
   history, projected season points, and a full stat line (including receptions for RBs) —
