@@ -35,6 +35,34 @@ This app ships two ways:
   desktop) — a round-1 recap plus a link that opens straight to the results
   screen, no extra clicks
 
+## Cheat Sheet Generator
+
+A standalone companion tool for pre-draft prep — `dist/cheat-sheet-generator.html`
+(Claude artifact) or `public/cheatsheet.html` (hosted website). Built from
+`src/cheatsheet/`, sharing the same `src/players.json` pool as the draft room,
+but otherwise fully independent (no room, no live sync — everything is kept
+in that browser's `localStorage`).
+
+- **Players tab**: searchable/filterable/sortable player list with tiers
+  (auto-computed from projected-point gaps within each position), season
+  projected points, and receptions called out for every RB/WR/TE (PPR).
+  Click a player to expand their full stat line, age, and injury notes.
+- **Keeper leagues**: mark any player "kept" (individually or in bulk via
+  checkboxes) to pull them out of the pool — they collapse into a "Kept /
+  unavailable" section and can be restored any time.
+- **Custom stats**: add any stat column you want tracked (e.g. target share,
+  strength of schedule) and fill in values inline; stored alongside the
+  built-in stats and included in CSV export.
+- **Team Offense tab**: all 32 teams graded A+ through F from the combined
+  season projection of their likely starting core (QB1, top 2 RBs, top 3
+  WRs, TE1) — a gut-check for skill-position depth, streaming a QB/DST, or
+  picking a stack.
+- **Draft Strategy tab**: pick a strategy (Best Player Available, Hero RB,
+  Zero RB, Robust RB, Zero WR, Late-Round QB, Stream DST/K) and it flags
+  players on the Players tab as a round-based "Priority" or "Fade" fit for
+  that build.
+- Export the current view to CSV, or print a clean black-and-white sheet.
+
 ## Project structure
 
 ```
@@ -43,6 +71,10 @@ src/
                 # __PLAYERS_JSON__ placeholder that gets filled in at build time)
   app.js        # all application logic
   players.json  # player pool (name, position, team, bye week, ADP)
+  cheatsheet/
+    index.html  # Cheat Sheet Generator page shell + styles (same template
+                # pattern, reuses src/players.json)
+    app.js      # Cheat Sheet Generator logic
 api/
   storage.js    # serverless function replacing window.storage for the website
                 # build: get/set/delete a key, namespaced by ?room= code,
@@ -54,9 +86,11 @@ scripts/
   enrich_players.py  # (re-)generates the age/injury/projections/stats fields
                      # in src/players.json — see "Data" below
 public/
-  index.html, app.js   # built website output (generated — do not hand-edit)
+  index.html, app.js        # built website output (generated — do not hand-edit)
+  cheatsheet.html, cheatsheet.js  # built Cheat Sheet Generator (generated)
 dist/
-  league-draft.html    # built single-file Claude artifact (generated — do not hand-edit)
+  league-draft.html         # built single-file Claude artifact (generated — do not hand-edit)
+  cheat-sheet-generator.html  # built single-file Cheat Sheet Generator artifact (generated)
 build.py                # generates both public/ and dist/ from src/
 ```
 

@@ -16,6 +16,7 @@ ROOT = pathlib.Path(__file__).parent
 SRC = ROOT / "src"
 DIST = ROOT / "dist"
 PUBLIC = ROOT / "public"
+SRC_CHEATSHEET = SRC / "cheatsheet"
 
 def build():
     html = (SRC / "index.html").read_text()
@@ -43,6 +44,37 @@ def build_web():
     shutil.copyfile(SRC / "app.js", PUBLIC / "app.js")
     print(f"Built {PUBLIC / 'index.html'} + {PUBLIC / 'app.js'}")
 
+def build_cheatsheet():
+    html = (SRC_CHEATSHEET / "index.html").read_text()
+    players_json = (SRC / "players.json").read_text()
+    app_js = (SRC_CHEATSHEET / "app.js").read_text()
+
+    html = html.replace("__PLAYERS_JSON__", players_json)
+    html = html.replace(
+        '<script src="app.js"></script>',
+        f"<script>\n{app_js}\n</script>",
+    )
+
+    DIST.mkdir(exist_ok=True)
+    out_path = DIST / "cheat-sheet-generator.html"
+    out_path.write_text(html)
+    print(f"Built {out_path} ({len(html):,} bytes)")
+
+def build_cheatsheet_web():
+    html = (SRC_CHEATSHEET / "index.html").read_text()
+    players_json = (SRC / "players.json").read_text()
+    html = html.replace("__PLAYERS_JSON__", players_json)
+    html = html.replace(
+        '<script src="app.js"></script>', '<script src="cheatsheet.js"></script>'
+    )
+
+    PUBLIC.mkdir(exist_ok=True)
+    (PUBLIC / "cheatsheet.html").write_text(html)
+    shutil.copyfile(SRC_CHEATSHEET / "app.js", PUBLIC / "cheatsheet.js")
+    print(f"Built {PUBLIC / 'cheatsheet.html'} + {PUBLIC / 'cheatsheet.js'}")
+
 if __name__ == "__main__":
     build()
     build_web()
+    build_cheatsheet()
+    build_cheatsheet_web()
