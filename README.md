@@ -24,7 +24,9 @@ This app ships two ways:
   - Keepers (assign a player to a team pre-draft; costs that team's pick in a chosen round —
     can be set right on the setup screen before creating the room, or added later from the
     lobby; also works for mock drafts, which skip the lobby entirely)
-  - Pick restrictions (block a team from picking in a specific round)
+  - Pick restrictions (block a team from picking in a specific round — can also be set on
+    the setup screen before creating the room, or added later from the lobby; works for
+    mock drafts too)
   - Custom stat columns (add any stat you want tracked, then fill in a value per player)
 - Configurable roster format (QB/RB/WR/TE/FLEX/DST/K counts, bench size)
 - Searchable/filterable player pool (2026 season ADP data, ~258 players) with age, injury

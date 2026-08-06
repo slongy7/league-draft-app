@@ -274,7 +274,9 @@ function buildSetupForm(){
   document.getElementById('setupNumTeams').value = '10';
   buildRosterConfigInputs();
   setupKeepers = [];
+  setupSkips = [];
   renderSetupKeepers();
+  renderSetupSkips();
 }
 
 // Attached once (not inside buildSetupForm, which reruns every time the
@@ -285,8 +287,17 @@ document.getElementById('setupNumTeams').addEventListener('change', (e)=>{
   renderTeamNameInputs(n);
   renderMockSlotOptions(n);
   setupKeepers = setupKeepers.filter(k=>k.teamIdx < n);
+  setupSkips = setupSkips.filter(k=>k.teamIdx < n);
   renderSetupKeepers();
+  renderSetupSkips();
 });
+
+function setupOccupiedSet(){
+  const s = new Set();
+  setupKeepers.forEach(k=>s.add(k.teamIdx+'-'+k.round));
+  setupSkips.forEach(k=>s.add(k.teamIdx+'-'+k.round));
+  return s;
+}
 
 /* ---------------- setup-screen keepers (staged pre-creation) ---------------- */
 
@@ -327,6 +338,7 @@ function renderSetupKeeperRoundOptions(){
   sel.innerHTML = opts.join('');
   if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
   setupKeepers = setupKeepers.filter(k=>k.round <= rounds);
+  setupSkips = setupSkips.filter(k=>k.round <= rounds);
 }
 
 function renderSetupKeeperPlayerOptions(){
@@ -370,16 +382,16 @@ document.getElementById('setupKeeperPlayerSearch').addEventListener('input', (e)
   renderSetupKeeperPlayerOptions();
 });
 
-document.getElementById('rosterConfig').addEventListener('change', renderSetupKeepers);
-document.getElementById('cfgDST').addEventListener('change', renderSetupKeepers);
-document.getElementById('cfgK').addEventListener('change', renderSetupKeepers);
+document.getElementById('rosterConfig').addEventListener('change', ()=>{ renderSetupKeepers(); renderSetupSkips(); });
+document.getElementById('cfgDST').addEventListener('change', ()=>{ renderSetupKeepers(); renderSetupSkips(); });
+document.getElementById('cfgK').addEventListener('change', ()=>{ renderSetupKeepers(); renderSetupSkips(); });
 
 document.getElementById('setupAddKeeperBtn').addEventListener('click', ()=>{
   const teamIdx = parseInt(document.getElementById('setupKeeperTeam').value,10);
   const playerId = parseInt(document.getElementById('setupKeeperPlayer').value,10);
   const round = parseInt(document.getElementById('setupKeeperRound').value,10);
   if(Number.isNaN(teamIdx) || Number.isNaN(playerId) || Number.isNaN(round)){ toast('Fill out all fields.'); return; }
-  if(setupKeepers.some(k=>k.teamIdx===teamIdx && k.round===round)){ toast(`${setupTeamName(teamIdx)} already has round ${round} spoken for.`); return; }
+  if(setupOccupiedSet().has(teamIdx+'-'+round)){ toast(`${setupTeamName(teamIdx)} already has round ${round} spoken for.`); return; }
   if(setupKeepers.some(k=>k.playerId===playerId)){ toast('That player is already a keeper.'); return; }
   setupKeepers.push({teamIdx, playerId, round});
   renderSetupKeepers();
@@ -389,6 +401,63 @@ document.getElementById('setupAddKeeperBtn').addEventListener('click', ()=>{
 window.removeSetupKeeper = function(idx){
   setupKeepers.splice(idx,1);
   renderSetupKeepers();
+};
+
+/* ---------------- setup-screen pick restrictions (staged pre-creation) ---------------- */
+
+let setupSkips = [];
+
+function renderSetupSkipTeamOptions(){
+  const numTeams = parseInt(document.getElementById('setupNumTeams').value,10);
+  const opts = [];
+  for(let i=0;i<numTeams;i++) opts.push(`<option value="${i}">${escapeHtml(setupTeamName(i))}</option>`);
+  const sel = document.getElementById('setupSkipTeam');
+  const prev = sel.value;
+  sel.innerHTML = opts.join('');
+  if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+}
+
+function renderSetupSkipRoundOptions(){
+  const rounds = buildSlotTemplate(setupRosterConfig()).length;
+  const sel = document.getElementById('setupSkipRound');
+  const prev = sel.value;
+  const opts = [];
+  for(let r=1;r<=rounds;r++) opts.push(`<option value="${r}">Round ${r}</option>`);
+  sel.innerHTML = opts.join('');
+  if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+  setupSkips = setupSkips.filter(k=>k.round <= rounds);
+}
+
+function renderSetupSkipList(){
+  const wrap = document.getElementById('setupSkipList');
+  wrap.innerHTML = setupSkips.length ? setupSkips.map((k,i)=>`
+    <div class="kx-row">
+      <span class="kx-tag">RD ${k.round}</span>
+      <span class="kx-main">${escapeHtml(setupTeamName(k.teamIdx))} — pick blocked</span>
+      <button class="kx-remove" onclick="removeSetupSkip(${i})">Remove</button>
+    </div>
+  `).join('') : `<div class="kx-empty">No pick restrictions set.</div>`;
+}
+
+function renderSetupSkips(){
+  renderSetupSkipTeamOptions();
+  renderSetupSkipRoundOptions();
+  renderSetupSkipList();
+}
+
+document.getElementById('setupAddSkipBtn').addEventListener('click', ()=>{
+  const teamIdx = parseInt(document.getElementById('setupSkipTeam').value,10);
+  const round = parseInt(document.getElementById('setupSkipRound').value,10);
+  if(Number.isNaN(teamIdx) || Number.isNaN(round)){ toast('Fill out all fields.'); return; }
+  if(setupOccupiedSet().has(teamIdx+'-'+round)){ toast(`${setupTeamName(teamIdx)} already has round ${round} spoken for.`); return; }
+  setupSkips.push({teamIdx, round});
+  renderSetupSkips();
+  toast('Pick blocked.');
+});
+
+window.removeSetupSkip = function(idx){
+  setupSkips.splice(idx,1);
+  renderSetupSkips();
 };
 
 function ordinalSuffix(n){
@@ -518,7 +587,7 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
     if(!res.ok){ toast('Could not create room: ' + res.error); return; }
     COMMISH_TOKEN = CONFIG.commissionerToken;
     await storageSet('commissioner_token', {token: COMMISH_TOKEN}, false);
-    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips:[], version:1};
+    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips: setupSkips.map(k=>({...k})), version:1};
     await storageSet(DRAFT_KEY, DRAFT, true);
 
     renderLobby();
@@ -545,7 +614,7 @@ document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
     MOCK = true;
     CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs:[], values:{}}};
     await storageSet(CFG_KEY, CONFIG, true);
-    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips:[], version:1};
+    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips: setupSkips.map(k=>({...k})), version:1};
     for(let i=0;i<numTeams;i++) DRAFT.claims[i] = i===0 ? teamNames[0] : 'CPU';
     await storageSet(DRAFT_KEY, DRAFT, true);
     IDENTITY = {name: teamNames[0], teamIdx: 0};

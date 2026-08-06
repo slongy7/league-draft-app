@@ -408,6 +408,29 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       <div id="setupKeeperList" style="margin-top:16px;"></div>
     </div>
 
+    <div class="card">
+      <h3>Pick restrictions (optional)</h3>
+      <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
+        Block a team from picking in a specific round before creating the room (or starting a
+        mock draft) — for a forfeited pick, a punishment, or any house rule. That slot is
+        skipped entirely in the live draft. You can still add more from the lobby later.
+      </p>
+      <div class="row2" style="align-items:end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Team</label>
+          <select id="setupSkipTeam"></select>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Round</label>
+          <select id="setupSkipRound"></select>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn-secondary" id="setupAddSkipBtn">🚫 Block this pick</button>
+      </div>
+      <div id="setupSkipList" style="margin-top:16px;"></div>
+    </div>
+
     <p style="color:var(--muted);font-size:13px;margin:0 0 12px;">
       Mock drafts run entirely on this device — no invite link needed. Every other team
       drafts for itself (best player available) so you can practice instantly and re-run it
