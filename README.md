@@ -21,7 +21,9 @@ This app ships two ways:
   invite link, no other players needed (see "Mock drafts" below)
 - Commissioner role (room creator) with sole control over:
   - Draft order (shuffle, or manually reorder teams any time)
-  - Keepers (assign a player to a team pre-draft; costs that team's pick in a chosen round)
+  - Keepers (assign a player to a team pre-draft; costs that team's pick in a chosen round —
+    can be set right on the setup screen before creating the room, or added later from the
+    lobby; also works for mock drafts, which skip the lobby entirely)
   - Pick restrictions (block a team from picking in a specific round)
   - Custom stat columns (add any stat you want tracked, then fill in a value per player)
 - Configurable roster format (QB/RB/WR/TE/FLEX/DST/K counts, bench size)

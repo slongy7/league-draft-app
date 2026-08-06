@@ -378,6 +378,36 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       <label class="checkline"><input type="checkbox" id="cfgK" checked> Include Kicker slot</label>
     </div>
 
+    <div class="card">
+      <h3>Keepers (optional)</h3>
+      <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
+        Pre-assign a keeper to a team before creating the room (or starting a mock draft). The
+        player comes off the board, fills a roster spot, and that team's pick in the round you
+        choose is removed from the live draft. You can still add more from the lobby later.
+      </p>
+      <div class="row2" style="align-items:end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Team</label>
+          <select id="setupKeeperTeam"></select>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Player</label>
+          <input type="text" id="setupKeeperPlayerSearch" placeholder="Search players…" style="margin-bottom:8px;">
+          <select id="setupKeeperPlayer" size="6" style="width:100%;"></select>
+        </div>
+      </div>
+      <div class="row2" style="margin-top:14px;align-items:end;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Counts as round</label>
+          <select id="setupKeeperRound"></select>
+        </div>
+        <div>
+          <button class="btn-secondary" id="setupAddKeeperBtn" style="width:100%;">+ Add keeper</button>
+        </div>
+      </div>
+      <div id="setupKeeperList" style="margin-top:16px;"></div>
+    </div>
+
     <p style="color:var(--muted);font-size:13px;margin:0 0 12px;">
       Mock drafts run entirely on this device — no invite link needed. Every other team
       drafts for itself (best player available) so you can practice instantly and re-run it

@@ -273,6 +273,8 @@ function buildSetupForm(){
   renderMockSlotOptions(10);
   document.getElementById('setupNumTeams').value = '10';
   buildRosterConfigInputs();
+  setupKeepers = [];
+  renderSetupKeepers();
 }
 
 // Attached once (not inside buildSetupForm, which reruns every time the
@@ -282,7 +284,112 @@ document.getElementById('setupNumTeams').addEventListener('change', (e)=>{
   const n = parseInt(e.target.value,10);
   renderTeamNameInputs(n);
   renderMockSlotOptions(n);
+  setupKeepers = setupKeepers.filter(k=>k.teamIdx < n);
+  renderSetupKeepers();
 });
+
+/* ---------------- setup-screen keepers (staged pre-creation) ---------------- */
+
+let setupKeepers = [];
+let setupKeeperSearch = '';
+
+function setupRosterConfig(){
+  const roster = {};
+  document.querySelectorAll('#rosterConfig select').forEach(sel=>{
+    roster[sel.dataset.key] = parseInt(sel.value,10);
+  });
+  roster.DST = document.getElementById('cfgDST').checked ? 1 : 0;
+  roster.K = document.getElementById('cfgK').checked ? 1 : 0;
+  return roster;
+}
+
+function setupTeamName(i){
+  const inputs = [...document.querySelectorAll('#teamNameList input')];
+  return (inputs[i] && inputs[i].value.trim()) || `Team ${i+1}`;
+}
+
+function renderSetupKeeperTeamOptions(){
+  const numTeams = parseInt(document.getElementById('setupNumTeams').value,10);
+  const opts = [];
+  for(let i=0;i<numTeams;i++) opts.push(`<option value="${i}">${escapeHtml(setupTeamName(i))}</option>`);
+  const sel = document.getElementById('setupKeeperTeam');
+  const prev = sel.value;
+  sel.innerHTML = opts.join('');
+  if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+}
+
+function renderSetupKeeperRoundOptions(){
+  const rounds = buildSlotTemplate(setupRosterConfig()).length;
+  const sel = document.getElementById('setupKeeperRound');
+  const prev = sel.value;
+  const opts = [];
+  for(let r=1;r<=rounds;r++) opts.push(`<option value="${r}">Round ${r}</option>`);
+  sel.innerHTML = opts.join('');
+  if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+  setupKeepers = setupKeepers.filter(k=>k.round <= rounds);
+}
+
+function renderSetupKeeperPlayerOptions(){
+  const sel = document.getElementById('setupKeeperPlayer');
+  const takenIds = new Set(setupKeepers.map(k=>k.playerId));
+  let avail = PLAYERS_RAW.filter(p=>!takenIds.has(p.id));
+  if(setupKeeperSearch){
+    const q = setupKeeperSearch.toLowerCase();
+    avail = avail.filter(p=>p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q) || p.pos.toLowerCase()===q);
+  }
+  avail.sort((a,b)=>a.adp-b.adp);
+  const prevVal = sel.value;
+  avail = avail.slice(0,200);
+  sel.innerHTML = avail.length
+    ? avail.map(p=>`<option value="${p.id}">${p.adp} · ${p.pos} · ${escapeHtml(p.name)} (${p.team})</option>`).join('')
+    : `<option value="" disabled>No players match "${escapeHtml(setupKeeperSearch)}"</option>`;
+  if(avail.some(p=>String(p.id)===prevVal)) sel.value = prevVal;
+}
+
+function renderSetupKeeperList(){
+  const wrap = document.getElementById('setupKeeperList');
+  wrap.innerHTML = setupKeepers.length ? setupKeepers.map((k,i)=>{
+    const p = PLAYERS_RAW.find(pl=>pl.id===k.playerId);
+    return `<div class="kx-row">
+      <span class="kx-tag">RD ${k.round}</span>
+      <span class="kx-main">${escapeHtml(setupTeamName(k.teamIdx))} — ${p?escapeHtml(p.name):'?'} <span style="color:var(--muted)">${p?p.pos+' · '+p.team:''}</span></span>
+      <button class="kx-remove" onclick="removeSetupKeeper(${i})">Remove</button>
+    </div>`;
+  }).join('') : `<div class="kx-empty">No keepers set yet.</div>`;
+}
+
+function renderSetupKeepers(){
+  renderSetupKeeperTeamOptions();
+  renderSetupKeeperRoundOptions();
+  renderSetupKeeperPlayerOptions();
+  renderSetupKeeperList();
+}
+
+document.getElementById('setupKeeperPlayerSearch').addEventListener('input', (e)=>{
+  setupKeeperSearch = e.target.value;
+  renderSetupKeeperPlayerOptions();
+});
+
+document.getElementById('rosterConfig').addEventListener('change', renderSetupKeepers);
+document.getElementById('cfgDST').addEventListener('change', renderSetupKeepers);
+document.getElementById('cfgK').addEventListener('change', renderSetupKeepers);
+
+document.getElementById('setupAddKeeperBtn').addEventListener('click', ()=>{
+  const teamIdx = parseInt(document.getElementById('setupKeeperTeam').value,10);
+  const playerId = parseInt(document.getElementById('setupKeeperPlayer').value,10);
+  const round = parseInt(document.getElementById('setupKeeperRound').value,10);
+  if(Number.isNaN(teamIdx) || Number.isNaN(playerId) || Number.isNaN(round)){ toast('Fill out all fields.'); return; }
+  if(setupKeepers.some(k=>k.teamIdx===teamIdx && k.round===round)){ toast(`${setupTeamName(teamIdx)} already has round ${round} spoken for.`); return; }
+  if(setupKeepers.some(k=>k.playerId===playerId)){ toast('That player is already a keeper.'); return; }
+  setupKeepers.push({teamIdx, playerId, round});
+  renderSetupKeepers();
+  toast('Keeper added.');
+});
+
+window.removeSetupKeeper = function(idx){
+  setupKeepers.splice(idx,1);
+  renderSetupKeepers();
+};
 
 function ordinalSuffix(n){
   const s = ['th','st','nd','rd'], v = n % 100;
@@ -411,7 +518,7 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
     if(!res.ok){ toast('Could not create room: ' + res.error); return; }
     COMMISH_TOKEN = CONFIG.commissionerToken;
     await storageSet('commissioner_token', {token: COMMISH_TOKEN}, false);
-    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers:[], skips:[], version:1};
+    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips:[], version:1};
     await storageSet(DRAFT_KEY, DRAFT, true);
 
     renderLobby();
@@ -438,7 +545,7 @@ document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
     MOCK = true;
     CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs:[], values:{}}};
     await storageSet(CFG_KEY, CONFIG, true);
-    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers:[], skips:[], version:1};
+    DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips:[], version:1};
     for(let i=0;i<numTeams;i++) DRAFT.claims[i] = i===0 ? teamNames[0] : 'CPU';
     await storageSet(DRAFT_KEY, DRAFT, true);
     IDENTITY = {name: teamNames[0], teamIdx: 0};
