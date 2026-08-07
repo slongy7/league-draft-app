@@ -719,7 +719,11 @@ async function runBotsUntilUserTurn(){
       renderAll(); // show this pick "on the clock" before it resolves, so nothing skips ahead unseen
       await new Promise(r=>setTimeout(r, 260));
       const ok = await botDraftOnePick();
-      if(!ok) break;
+      if(!ok){
+        toast("Ran out of players — your roster settings need more players than the pool has. Try fewer teams, a smaller bench, or reset picks.");
+        renderAll();
+        break;
+      }
       renderAll();
     }
   } finally {
@@ -729,15 +733,17 @@ async function runBotsUntilUserTurn(){
 
 async function simulateRestOfMockDraft(){
   if(!MOCK) return;
+  let ranOut = false;
   while(DRAFT.overall < buildLiveSchedule().length){
     const ok = await botDraftOnePick();
-    if(!ok) break;
+    if(!ok){ ranOut = true; break; }
   }
   if(DRAFT.status==='complete'){
     renderResults();
     showScreen('results');
   } else {
     renderAll();
+    if(ranOut) toast("Ran out of players — your roster settings need more players than the pool has. Try fewer teams, a smaller bench, or reset picks.");
   }
 }
 
