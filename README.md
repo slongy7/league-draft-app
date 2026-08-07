@@ -66,12 +66,14 @@ in that browser's `localStorage`).
 - **Custom stats**: add any stat column you want tracked (e.g. target share,
   strength of schedule) and fill in values inline; stored alongside the
   built-in stats and included in CSV export.
-- **Draft Sharks (or any expert) rank vs. ADP**: enter a player's expert rank
-  one at a time, or paste in a whole ranked list at once ("Import Draft
-  Sharks ranks") — Draft Sharks' full rankings are subscriber content, so
-  this app doesn't ship with them pre-loaded, you bring your own list. Either
-  way, an "ADP Diff" column shows ADP minus expert rank: positive means the
-  market is drafting them later than the expert has them (a value/sleeper),
+- **FantasyPros (or any expert) rank vs. ADP**: enter a player's expert rank
+  one at a time, or paste in a whole ranked list at once ("Import FantasyPros
+  ranks"). FantasyPros' Expert Consensus Rankings (100+ experts blended) are
+  free to view, no subscription — but this app still doesn't ship with them
+  pre-loaded, since redistributing their compiled rankings isn't ours to do;
+  you copy the list from fantasypros.com and paste it in. Either way, an
+  "ADP Diff" column shows ADP minus expert rank: positive means the market
+  is drafting them later than the expert has them (a value/sleeper),
   negative means earlier (a reach).
 - **Import league rules from ESPN**: pulls team count, roster format, and
   scoring (points per reception/yard/touchdown) from an existing ESPN league

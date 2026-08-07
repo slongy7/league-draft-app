@@ -110,7 +110,7 @@ const state = {
   customValues: loadJSON(LS.customValues, {}), // {playerId: {statKey: value}}
   strategy: loadJSON(LS.strategy, 'bpa'),
   numTeams: loadJSON(LS.numTeams, 12),
-  expertRank: loadJSON(LS.expertRank, {}), // {playerId: rank} — commissioner-entered Draft Sharks (or any expert) rank
+  expertRank: loadJSON(LS.expertRank, {}), // {playerId: rank} — commissioner-entered FantasyPros ECR (or any expert) rank
   scoring: Object.assign({}, DEFAULT_SCORING, loadJSON(LS.scoring, {})),
   search: '',
   pos: 'ALL',
@@ -355,15 +355,15 @@ function renderHead(){
     {key:'rec', label:'Rec'},
     {key:'offense', label:'Off Grade'},
     {key:'fit', label:'Fit'},
-    {key:'expertRank', label:'DS Rk'},
+    {key:'expertRank', label:'FP Rk'},
     {key:'adpDiff', label:'Diff'},
   ];
   let html = cols.map(c => {
     if(c.key==='stripe') return `<th style="width:4px;padding:0;"></th>`;
     if(c.key==='sel') return `<th style="width:26px;"></th>`;
     const sorted = state.sortKey===c.key || (c.key==='rank' && state.sortKey==='adp');
-    const title = c.key==='expertRank' ? ' title="Draft Sharks (or any expert source) rank — edit inline, or use Import Draft Sharks ranks"'
-      : c.key==='adpDiff' ? ' title="ADP minus Draft Sharks rank. Positive = value (ADP later than expert rank), negative = reach."' : '';
+    const title = c.key==='expertRank' ? ' title="FantasyPros ECR (or any expert source) rank — edit inline, or use Import FantasyPros ranks"'
+      : c.key==='adpDiff' ? ' title="ADP minus expert rank. Positive = value (ADP later than expert rank), negative = reach."' : '';
     return `<th data-sort="${c.key}" class="${sorted?'sorted':''}"${title}>${esc(c.label)}</th>`;
   }).join('');
   state.customStats.forEach(cs => {
@@ -410,7 +410,7 @@ function renderRow(p, idx){
   } else {
     const tag = diff>3 ? 'priority' : diff<-3 ? 'fade' : 'neutral';
     const sign = diff>0 ? '+' : '';
-    row += `<td><span class="fit-badge fit-${tag}" title="ADP ${p.adp} vs Draft Sharks rank ${state.expertRank[p.id]}">${sign}${diff}</span></td>`;
+    row += `<td><span class="fit-badge fit-${tag}" title="ADP ${p.adp} vs expert rank ${state.expertRank[p.id]}">${sign}${diff}</span></td>`;
   }
   state.customStats.forEach(cs => {
     const val = (state.customValues[p.id]||{})[cs.key];
@@ -433,7 +433,7 @@ function renderDetailRow(p){
   stats += `<div class="detail-stat"><span class="dlabel">Proj Pts</span><span class="dval">${fmt(computeProjPts(p))}</span></div>`;
   const injuries = (p.injuries && p.injuries.length) ? p.injuries.join('; ') : 'No notable injury history on record.';
   const diff = adpDiff(p);
-  const ranking = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">Draft Sharks (or any expert) rank</div>
+  const ranking = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">FantasyPros ECR (or any expert) rank</div>
     <div class="cfield"><label>ADP</label><span class="mono" style="color:var(--muted);">${p.adp}</span></div>
     <div class="cfield"><label>Expert rank</label><input type="number" class="mono expert-input" data-id="${p.id}" value="${esc(state.expertRank[p.id]==null?'':state.expertRank[p.id])}" placeholder="—"></div>
     <div class="cfield"><label>ADP diff</label><span class="mono" style="color:${diff==null?'var(--muted-2)':diff>3?'var(--good)':diff<-3?'var(--bad)':'var(--muted)'};">${diff==null?'—':(diff>0?'+':'')+diff}</span></div>
@@ -592,7 +592,7 @@ function setCustomValue(id, key, value){
   persistCustomValues();
 }
 
-/* ---------------- Draft Sharks import ---------------- */
+/* ---------------- FantasyPros (or any expert) rank import ---------------- */
 
 function normalizeName(s){
   return String(s||'').toLowerCase()
@@ -625,7 +625,7 @@ function matchPlayerByName(namePart){
   return null;
 }
 
-function parseDraftSharksText(text){
+function parseExpertRanksText(text){
   const lines = text.split(/\r?\n/);
   const matched = [];
   const unmatched = [];
@@ -647,8 +647,8 @@ function parseDraftSharksText(text){
   return {matched, unmatched};
 }
 
-function importDraftSharksText(text){
-  const {matched, unmatched} = parseDraftSharksText(text);
+function importExpertRanksText(text){
+  const {matched, unmatched} = parseExpertRanksText(text);
   matched.forEach(m => { state.expertRank[m.id] = m.rank; });
   persistExpertRank();
   render();
@@ -725,7 +725,7 @@ function setExpertRank(id, value){
 
 function exportCsv(){
   const list = visiblePlayers();
-  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','DraftSharksRank','ADPDiff', ...state.customStats.map(cs=>cs.label)];
+  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','ExpertRank','ADPDiff', ...state.customStats.map(cs=>cs.label)];
   const rows = list.map((p,i) => {
     const grade = offenseGrades[p.team] ? offenseGrades[p.team].grade : '';
     const custom = state.customStats.map(cs => (state.customValues[p.id]||{})[cs.key] || '');
@@ -801,7 +801,7 @@ function attachEvents(){
   });
   document.getElementById('clearExpertBtn').addEventListener('click', () => {
     if(!Object.keys(state.expertRank).length) return;
-    if(!confirm('Clear all Draft Sharks ranks?')) return;
+    if(!confirm('Clear all FantasyPros (expert) ranks?')) return;
     state.expertRank = {};
     persistExpertRank();
     render();
@@ -809,7 +809,7 @@ function attachEvents(){
 
   const importOverlay = document.getElementById('importModalOverlay');
   const importTextarea = document.getElementById('importTextarea');
-  document.getElementById('importDsBtn').addEventListener('click', () => {
+  document.getElementById('importFpBtn').addEventListener('click', () => {
     importTextarea.value = '';
     importOverlay.hidden = false;
     importTextarea.focus();
@@ -820,7 +820,7 @@ function attachEvents(){
     const text = importTextarea.value;
     if(!text.trim()){ importOverlay.hidden = true; return; }
     importOverlay.hidden = true;
-    importDraftSharksText(text);
+    importExpertRanksText(text);
   });
 
   const espnOverlay = document.getElementById('espnModalOverlay');

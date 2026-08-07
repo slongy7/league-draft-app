@@ -209,12 +209,12 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
       <div class="ctl-spacer"></div>
       <div class="ctl-right">
         <button class="btn-secondary" id="addStatBtn">+ Custom stat</button>
-        <button class="btn-secondary" id="importDsBtn">Import Draft Sharks ranks</button>
+        <button class="btn-secondary" id="importFpBtn">Import FantasyPros ranks</button>
         <button class="btn-secondary" id="importEspnBtn">Import ESPN league rules</button>
         <button class="btn-secondary" id="exportCsvBtn">Export CSV</button>
         <button class="btn-secondary" id="printBtn">Print</button>
         <button class="btn-ghost" id="resetRemovedBtn">Reset kept list</button>
-        <button class="btn-ghost" id="clearExpertBtn">Clear Draft Sharks ranks</button>
+        <button class="btn-ghost" id="clearExpertBtn">Clear FantasyPros ranks</button>
       </div>
     </div>
 
@@ -268,12 +268,13 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
 
   <div class="modal-overlay" id="importModalOverlay" hidden>
     <div class="modal card">
-      <h3>Import Draft Sharks ranks</h3>
+      <h3>Import FantasyPros ranks</h3>
       <p class="offense-intro" style="margin-bottom:10px;">
-        Draft Sharks' full rankings are subscriber content, so paste your own list here rather than
-        expecting it to be pre-loaded. One player per line, e.g. <span class="mono">1. Ja'Marr Chase</span>
+        FantasyPros' Expert Consensus Rankings (100+ experts, blended) are free to view at
+        <span class="mono">fantasypros.com/nfl/rankings</span> — no subscription needed. Copy the list
+        and paste it here. One player per line, e.g. <span class="mono">1. Ja'Marr Chase</span>
         or <span class="mono">Ja'Marr Chase, 1</span> — team/position after the name is fine and gets ignored.
-        Matched players get a Draft Sharks rank and an ADP Diff (positive = value, negative = reach).
+        Matched players get an expert rank and an ADP Diff (positive = value, negative = reach).
       </p>
       <textarea id="importTextarea" placeholder="1. Ja'Marr Chase&#10;2. Bijan Robinson&#10;3. Puka Nacua&#10;…"></textarea>
       <div class="modal-actions">
