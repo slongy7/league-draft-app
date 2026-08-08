@@ -42,10 +42,11 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 .btn-ghost:hover:not(:disabled){color:var(--text);border-color:var(--muted-2);}
 .btn-danger{background:transparent;color:var(--red);border:1.5px solid #5c332e;padding:8px 14px;font-size:13px;}
 .btn-danger:hover:not(:disabled){background:rgba(217,107,94,0.12);}
-select,input[type=text],input[type=number]{
+select,input[type=text],input[type=number],textarea{
   background:var(--panel-2);border:1.5px solid var(--line);color:var(--text);border-radius:7px;padding:9px 12px;font-family:'Inter',sans-serif;font-size:14px;
 }
-select:focus,input:focus{outline:none;border-color:var(--turf);}
+textarea{width:100%;resize:vertical;}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--turf);}
 select:disabled,input:disabled{opacity:0.4;cursor:not-allowed;}
 
 .screen{display:none;}
@@ -82,6 +83,7 @@ select:disabled,input:disabled{opacity:0.4;cursor:not-allowed;}
 .team-name-row.dragging{opacity:0.4;cursor:grabbing;}
 .team-name-row.drag-over{border-top-color:var(--turf);}
 .team-name-row .odrag{color:var(--muted-2);font-size:15px;line-height:1;flex-shrink:0;user-select:none;letter-spacing:-1px;}
+.team-name-row .oowner{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--steel);flex-shrink:0;padding:2px 8px;background:var(--panel-2);border-radius:5px;}
 .team-name-row .idx{font-family:'JetBrains Mono',monospace;color:var(--muted-2);width:26px;text-align:right;font-size:13px;}
 .team-name-row input{flex:1;}
 .checkline{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text);margin-top:4px;}
@@ -368,6 +370,13 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
           This top-to-bottom order is round 1's draft order (unless you randomize it above) — drag ⠿ to rearrange. You can still change it later too.
         </p>
         <div class="team-name-list" id="teamNameList"></div>
+        <details class="details" style="margin-top:12px;">
+          <summary>Reorder by name (paste your preferred draft order)</summary>
+          <div style="margin-top:10px;">
+            <textarea id="reorderNamesInput" rows="3" placeholder="One name per line, or comma-separated. Matches against team name or owner name (imported from ESPN)."></textarea>
+            <button class="btn-secondary" id="applyReorderBtn" style="margin-top:8px;">Apply order</button>
+          </div>
+        </details>
       </div>
     </div>
 

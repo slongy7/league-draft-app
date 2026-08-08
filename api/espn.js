@@ -4,8 +4,12 @@
 // header, which `fetch` from a web page is not allowed to set itself.
 //
 // POST /api/espn  { leagueId, season, espnS2?, swid? }
-//   -> { leagueName, numTeams, teams:[{id,name}], roster:{QB,RB,WR,TE,FLEX,DST,K,BN},
+//   -> { leagueName, numTeams, teams:[{id,name,owner}], roster:{QB,RB,WR,TE,FLEX,DST,K,BN},
 //        scoring:{reception?,passYdPt?,passTD?,rushYdPt?,rushTD?,recYdPt?,recTD?} }
+//
+// `owner` is the team's primary manager's real name if ESPN reports one
+// (falls back to their ESPN display name, then null if neither is present —
+// some leagues/privacy settings omit both).
 //
 // `scoring` is derived from ESPN's scoringItems (statId -> points-per-unit),
 // keyed by a handful of well-known-but-unofficial stat IDs — only the keys
@@ -72,11 +76,22 @@ module.exports = async function handler(req, res) {
     }
 
     const data = await espnRes.json();
+
+    const memberNameById = {};
+    (data.members || []).forEach(m => {
+      const full = [m.firstName, m.lastName].filter(Boolean).join(' ').trim();
+      memberNameById[m.id] = full || m.displayName || null;
+    });
+
     const teams = (data.teams || [])
-      .map(t => ({
-        id: t.id,
-        name: t.name || [t.location, t.nickname].filter(Boolean).join(' ') || `Team ${t.id}`,
-      }))
+      .map(t => {
+        const ownerId = (Array.isArray(t.owners) && t.owners[0]) || t.primaryOwner || null;
+        return {
+          id: t.id,
+          name: t.name || [t.location, t.nickname].filter(Boolean).join(' ') || `Team ${t.id}`,
+          owner: ownerId ? (memberNameById[ownerId] || null) : null,
+        };
+      })
       .sort((a, b) => a.id - b.id);
 
     if (!teams.length) {

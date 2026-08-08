@@ -519,13 +519,17 @@ function renderMockSlotOptions(n){
 
 function renderTeamNameInputs(n){
   const wrap = document.getElementById('teamNameList');
-  const existing = [...wrap.querySelectorAll('input')].map(i=>i.value);
+  const existingRows = [...wrap.querySelectorAll('.team-name-row')];
+  const existingValues = existingRows.map(r=>r.querySelector('input').value);
+  const existingOwners = existingRows.map(r=>r.dataset.owner||'');
   wrap.innerHTML = '';
   for(let i=0;i<n;i++){
     const row = document.createElement('div');
     row.className = 'team-name-row';
     row.draggable = true;
-    row.innerHTML = `<span class="odrag" title="Drag to set draft order">⠿</span><span class="idx">${i+1}</span><input type="text" placeholder="Team ${i+1}" value="${existing[i]||''}">`;
+    const owner = existingOwners[i] || '';
+    row.dataset.owner = owner;
+    row.innerHTML = `<span class="odrag" title="Drag to set draft order">⠿</span><span class="idx">${i+1}</span><input type="text" placeholder="Team ${i+1}" value="${existingValues[i]||''}">${owner ? `<span class="oowner">${escapeHtml(owner)}</span>` : ''}`;
     wrap.appendChild(row);
   }
   wireTeamNameDragAndDrop();
@@ -537,6 +541,34 @@ function renumberTeamNameRows(){
     row.querySelector('input').placeholder = `Team ${i+1}`;
   });
 }
+
+document.getElementById('applyReorderBtn').addEventListener('click', ()=>{
+  const raw = document.getElementById('reorderNamesInput').value;
+  const names = raw.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
+  if(!names.length){ toast('Paste at least one name first.'); return; }
+
+  const wrap = document.getElementById('teamNameList');
+  const rows = [...wrap.querySelectorAll('.team-name-row')];
+  const used = new Set();
+  const ordered = [];
+  let matched = 0;
+
+  names.forEach(name=>{
+    const q = name.toLowerCase();
+    let idx = rows.findIndex((r,i)=> !used.has(i) && (r.dataset.owner||'').toLowerCase() === q);
+    if(idx===-1) idx = rows.findIndex((r,i)=> !used.has(i) && r.querySelector('input').value.toLowerCase() === q);
+    if(idx===-1) idx = rows.findIndex((r,i)=> !used.has(i) && ((r.dataset.owner||'').toLowerCase().includes(q) || r.querySelector('input').value.toLowerCase().includes(q)));
+    if(idx!==-1){ used.add(idx); ordered.push(rows[idx]); matched++; }
+  });
+  rows.forEach((r,i)=>{ if(!used.has(i)) ordered.push(r); });
+  ordered.forEach(r=> wrap.appendChild(r));
+  renumberTeamNameRows();
+  document.getElementById('setupRandomize').checked = false;
+
+  toast(matched===names.length
+    ? `Reordered — all ${matched} name(s) matched.`
+    : `Reordered — matched ${matched} of ${names.length} name(s). Unmatched rows kept their relative order at the end.`);
+});
 
 let dragSrcNameRow = null;
 
@@ -1169,8 +1201,20 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
     }
     renderTeamNameInputs(n);
     renderMockSlotOptions(n);
-    const inputs = [...document.querySelectorAll('#teamNameList input')];
-    data.teams.slice(0,n).forEach((t,i)=>{ if(inputs[i]) inputs[i].value = t.name; });
+    const rows = [...document.querySelectorAll('#teamNameList .team-name-row')];
+    data.teams.slice(0,n).forEach((t,i)=>{
+      const row = rows[i];
+      if(!row) return;
+      row.querySelector('input').value = t.name;
+      row.dataset.owner = t.owner || '';
+      let ownerSpan = row.querySelector('.oowner');
+      if(t.owner){
+        if(!ownerSpan){ ownerSpan = document.createElement('span'); ownerSpan.className = 'oowner'; row.appendChild(ownerSpan); }
+        ownerSpan.textContent = t.owner;
+      } else if(ownerSpan){
+        ownerSpan.remove();
+      }
+    });
 
     if(data.roster){
       const r = data.roster;
