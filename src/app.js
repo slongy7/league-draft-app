@@ -1230,6 +1230,12 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
       document.getElementById('cfgK').checked = !!r.K;
     }
 
+    // Team names/count and roster format may have just changed — refresh the
+    // keeper/pick-restriction/custom-stat pickers so they show the real
+    // imported team names (and correct round counts) instead of stale ones.
+    renderSetupKeepers();
+    renderSetupSkips();
+
     showStatus(`✓ Imported "${data.leagueName}" — ${n} teams. Review the settings below, then create the room.`, true);
   }catch(e){
     console.error('ESPN import failed', e);
