@@ -360,6 +360,10 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       </div>
       <div class="row2">
         <div class="field" style="margin-bottom:0;">
+          <label for="mockYourTeam">Your team <span style="color:var(--muted-2);font-weight:400;text-transform:none;">(mock draft only)</span></label>
+          <select id="mockYourTeam"></select>
+        </div>
+        <div class="field" style="margin-bottom:0;">
           <label for="mockSlot">Your draft slot <span style="color:var(--muted-2);font-weight:400;text-transform:none;">(mock draft only)</span></label>
           <select id="mockSlot"></select>
         </div>
@@ -949,6 +953,7 @@ async function boot(){
 function buildSetupForm(){
   renderTeamNameInputs(10);
   renderMockSlotOptions(10);
+  renderMockYourTeamOptions(10);
   document.getElementById('setupNumTeams').value = '10';
   buildRosterConfigInputs();
   setupKeepers = [];
@@ -966,6 +971,7 @@ document.getElementById('setupNumTeams').addEventListener('change', (e)=>{
   const n = parseInt(e.target.value,10);
   renderTeamNameInputs(n);
   renderMockSlotOptions(n);
+  renderMockYourTeamOptions(n);
   setupKeepers = setupKeepers.filter(k=>k.teamIdx < n);
   setupSkips = setupSkips.filter(k=>k.teamIdx < n);
   renderSetupKeepers();
@@ -1195,6 +1201,24 @@ function renderMockSlotOptions(n){
   if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
 }
 
+// Which row is "you" for a mock draft — separate from draft slot (pick
+// position), since after an ESPN import or a name-based reorder, your own
+// team is rarely still the first row.
+function renderMockYourTeamOptions(n){
+  const sel = document.getElementById('mockYourTeam');
+  // Track the selected *team* across reorders, not the raw index — dragging
+  // or "Apply order" moves teams between indices, so re-selecting the same
+  // index after a reorder could silently point at a different team.
+  const prevText = sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].textContent : null;
+  const opts = [];
+  for(let i=0;i<n;i++) opts.push(`<option value="${i}">${escapeHtml(setupTeamName(i))}</option>`);
+  sel.innerHTML = opts.join('');
+  if(prevText){
+    const match = [...sel.options].find(o=>o.textContent===prevText);
+    if(match) sel.value = match.value;
+  }
+}
+
 function renderTeamNameInputs(n){
   const wrap = document.getElementById('teamNameList');
   const existingRows = [...wrap.querySelectorAll('.team-name-row')];
@@ -1212,6 +1236,15 @@ function renderTeamNameInputs(n){
   }
   wireTeamNameDragAndDrop();
 }
+
+// Keep the "Your team" picker's labels live as team names are typed directly
+// (not just on structural changes like count/reorder/import) — otherwise it
+// shows stale "Team N" placeholders while you're mid-edit.
+document.getElementById('teamNameList').addEventListener('input', (e)=>{
+  if(e.target.tagName === 'INPUT'){
+    renderMockYourTeamOptions(document.querySelectorAll('#teamNameList .team-name-row').length);
+  }
+});
 
 function renumberTeamNameRows(){
   document.querySelectorAll('#teamNameList .team-name-row').forEach((row,i)=>{
@@ -1241,6 +1274,7 @@ document.getElementById('applyReorderBtn').addEventListener('click', ()=>{
   rows.forEach((r,i)=>{ if(!used.has(i)) ordered.push(r); });
   ordered.forEach(r=> wrap.appendChild(r));
   renumberTeamNameRows();
+  renderMockYourTeamOptions(rows.length);
   document.getElementById('setupRandomize').checked = false;
 
   toast(matched===names.length
@@ -1283,6 +1317,7 @@ function wireTeamNameDragAndDrop(){
       else row.before(dragSrcNameRow);
       dragSrcNameRow = null;
       renumberTeamNameRows();
+      renderMockYourTeamOptions(wrap.children.length);
       // Dragging is a deliberate manual order — don't let the (default-on)
       // randomize checkbox silently discard it.
       document.getElementById('setupRandomize').checked = false;
@@ -1357,21 +1392,22 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
 document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
   try{
     const {numTeams, teamNames, nameInputs, roster, base} = readSetupForm();
-    if(!nameInputs[0] || !nameInputs[0].value.trim()) teamNames[0] = 'You';
+    const yourTeamIdx = clamp0(parseInt(document.getElementById('mockYourTeam').value,10), numTeams);
+    if(!nameInputs[yourTeamIdx] || !nameInputs[yourTeamIdx].value.trim()) teamNames[yourTeamIdx] = 'You';
 
     const slotVal = document.getElementById('mockSlot').value;
     const slotPos = slotVal === 'random' ? Math.floor(Math.random()*numTeams) : (parseInt(slotVal,10)-1);
-    const curPos = base.indexOf(0);
+    const curPos = base.indexOf(yourTeamIdx);
     [base[curPos], base[slotPos]] = [base[slotPos], base[curPos]];
 
     MOCK = true;
     CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}};
     await storageSet(CFG_KEY, CONFIG, true);
     DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips: setupSkips.map(k=>({...k})), version:1};
-    for(let i=0;i<numTeams;i++) DRAFT.claims[i] = i===0 ? teamNames[0] : 'CPU';
+    for(let i=0;i<numTeams;i++) DRAFT.claims[i] = i===yourTeamIdx ? teamNames[yourTeamIdx] : 'CPU';
     await storageSet(DRAFT_KEY, DRAFT, true);
-    IDENTITY = {name: teamNames[0], teamIdx: 0};
-    rosterViewIdx = 0;
+    IDENTITY = {name: teamNames[yourTeamIdx], teamIdx: yourTeamIdx};
+    rosterViewIdx = yourTeamIdx;
 
     enterDraftScreen();
     runBotsUntilUserTurn();
@@ -1380,6 +1416,10 @@ document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
     toast('Something went wrong starting the mock draft: ' + (e && e.message ? e.message : String(e)));
   }
 });
+
+function clamp0(n, numTeams){
+  return (Number.isInteger(n) && n>=0 && n<numTeams) ? n : 0;
+}
 
 function pickBotPlayer(teamIdx){
   const draftedIds = new Set([...DRAFT.picks.map(p=>p.playerId), ...(DRAFT.keepers||[]).map(k=>k.playerId)]);
@@ -1909,10 +1949,12 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
     }
 
     // Team names/count and roster format may have just changed — refresh the
-    // keeper/pick-restriction/custom-stat pickers so they show the real
-    // imported team names (and correct round counts) instead of stale ones.
+    // keeper/pick-restriction/custom-stat pickers and the mock-draft "your
+    // team" picker so they show the real imported team names (and correct
+    // round counts) instead of stale ones.
     renderSetupKeepers();
     renderSetupSkips();
+    renderMockYourTeamOptions(n);
 
     showStatus(`✓ Imported "${data.leagueName}" — ${n} teams. Review the settings below, then create the room.`, true);
   }catch(e){
