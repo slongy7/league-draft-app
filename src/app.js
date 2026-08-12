@@ -268,15 +268,22 @@ async function boot(){
 
 /* ---------------- SETUP screen ---------------- */
 
-function buildSetupForm(){
-  renderTeamNameInputs(10);
-  renderMockSlotOptions(10);
-  renderMockYourTeamOptions(10);
-  document.getElementById('setupNumTeams').value = '10';
-  buildRosterConfigInputs();
-  setupKeepers = [];
-  setupSkips = [];
-  setupCustomStatDefs = [];
+// preserve=true keeps whatever's already configured (team names/count,
+// roster format, keepers, pick restrictions, custom stats) instead of
+// wiping it back to blank defaults — used when returning to setup from an
+// in-progress/just-finished mock draft, so "New mock draft" reuses your
+// last setup rather than making you redo it (re-import included).
+function buildSetupForm(preserve){
+  if(!preserve){
+    renderTeamNameInputs(10);
+    renderMockSlotOptions(10);
+    renderMockYourTeamOptions(10);
+    document.getElementById('setupNumTeams').value = '10';
+    buildRosterConfigInputs();
+    setupKeepers = [];
+    setupSkips = [];
+    setupCustomStatDefs = [];
+  }
   renderSetupKeepers();
   renderSetupSkips();
   renderSetupCustomStats();
@@ -1521,7 +1528,7 @@ document.getElementById('renameMyTeamBtn').addEventListener('click', ()=>{
 document.getElementById('backToLobbyBtn').addEventListener('click', ()=>{
   if(MOCK){
     MOCK = false;
-    buildSetupForm();
+    buildSetupForm(true);
     showScreen('setup');
     return;
   }
@@ -1903,7 +1910,7 @@ document.getElementById('resetFromResultsBtn').addEventListener('click', async (
 
 document.getElementById('newMockFromResultsBtn').addEventListener('click', ()=>{
   MOCK = false;
-  buildSetupForm();
+  buildSetupForm(true);
   showScreen('setup');
 });
 
