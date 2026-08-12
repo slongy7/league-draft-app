@@ -1913,6 +1913,19 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
     }
 
     const n = Math.max(2, Math.min(16, data.numTeams || data.teams.length));
+
+    // Snapshot whatever's already in the team list (owner name, then team
+    // name) *before* rebuilding rows, so a re-import can restore each real
+    // team to its previous row position — that's what keeps keepers, pick
+    // restrictions, and draft order (row order) correctly attached to the
+    // same team instead of getting silently reassigned or wiped.
+    const oldRows = [...document.querySelectorAll('#teamNameList .team-name-row')];
+    const oldIdentity = oldRows.map(row => ({
+      owner: (row.dataset.owner||'').trim().toLowerCase(),
+      name: row.querySelector('input').value.trim().toLowerCase(),
+    }));
+    const hadExistingData = oldIdentity.some(id => id.owner || id.name);
+
     const numTeamsSel = document.getElementById('setupNumTeams');
     if([...numTeamsSel.options].some(o=>o.value===String(n))){
       numTeamsSel.value = String(n);
@@ -1933,6 +1946,39 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
         ownerSpan.remove();
       }
     });
+
+    if(hadExistingData){
+      const oldIndexByOwner = new Map(), oldIndexByName = new Map();
+      oldIdentity.forEach((id,i)=>{
+        if(id.owner && !oldIndexByOwner.has(id.owner)) oldIndexByOwner.set(id.owner, i);
+        if(id.name && !oldIndexByName.has(id.name)) oldIndexByName.set(id.name, i);
+      });
+      const usedOld = new Set();
+      const desiredOldIndex = rows.map(row=>{
+        const owner = (row.dataset.owner||'').trim().toLowerCase();
+        const name = row.querySelector('input').value.trim().toLowerCase();
+        let oi = owner && oldIndexByOwner.has(owner) ? oldIndexByOwner.get(owner) : null;
+        if(oi===null && name && oldIndexByName.has(name)) oi = oldIndexByName.get(name);
+        if(oi===null || oi>=n || usedOld.has(oi)) return null;
+        usedOld.add(oi);
+        return oi;
+      });
+      if(desiredOldIndex.some(v=>v!==null)){
+        const wrap = document.getElementById('teamNameList');
+        const finalOrder = new Array(n).fill(null);
+        rows.forEach((row,i)=>{ if(desiredOldIndex[i]!==null) finalOrder[desiredOldIndex[i]] = row; });
+        const leftover = rows.filter((row,i)=>desiredOldIndex[i]===null);
+        let li = 0;
+        for(let i=0;i<n;i++){ if(!finalOrder[i]) finalOrder[i] = leftover[li++]; }
+        finalOrder.forEach(row => wrap.appendChild(row));
+        renumberTeamNameRows();
+      }
+    }
+
+    // A shrinking team count could otherwise leave keepers/skips pointing
+    // at a row that no longer exists.
+    setupKeepers = setupKeepers.filter(k=>k.teamIdx < n);
+    setupSkips = setupSkips.filter(k=>k.teamIdx < n);
 
     if(data.roster){
       const r = data.roster;
