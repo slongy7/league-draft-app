@@ -520,10 +520,14 @@ function ordinalSuffix(n){
 function renderMockSlotOptions(n){
   const sel = document.getElementById('mockSlot');
   const prev = sel.value;
-  const opts = ['<option value="random">Random</option>'];
+  // Defaults to "keep" (no swap at all) rather than "random", so a draft
+  // order you've already arranged — by dragging, "Reorder by name", or an
+  // ESPN import — isn't quietly disturbed just by starting a mock draft.
+  const opts = ['<option value="keep">Keep current position</option>', '<option value="random">Random</option>'];
   for(let i=1;i<=n;i++) opts.push(`<option value="${i}">${i}${ordinalSuffix(i)} overall</option>`);
   sel.innerHTML = opts.join('');
   if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+  else sel.value = 'keep';
 }
 
 // Which row is "you" for a mock draft — separate from draft slot (pick
@@ -721,9 +725,11 @@ document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
     if(!nameInputs[yourTeamIdx] || !nameInputs[yourTeamIdx].value.trim()) teamNames[yourTeamIdx] = 'You';
 
     const slotVal = document.getElementById('mockSlot').value;
-    const slotPos = slotVal === 'random' ? Math.floor(Math.random()*numTeams) : (parseInt(slotVal,10)-1);
-    const curPos = base.indexOf(yourTeamIdx);
-    [base[curPos], base[slotPos]] = [base[slotPos], base[curPos]];
+    if(slotVal !== 'keep'){
+      const slotPos = slotVal === 'random' ? Math.floor(Math.random()*numTeams) : (parseInt(slotVal,10)-1);
+      const curPos = base.indexOf(yourTeamIdx);
+      [base[curPos], base[slotPos]] = [base[slotPos], base[curPos]];
+    }
 
     MOCK = true;
     CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}};
@@ -1326,6 +1332,10 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
     renderSetupKeepers();
     renderSetupSkips();
     renderMockYourTeamOptions(n);
+    // Importing gives the list a real, meaningful order — same as manually
+    // dragging or "Reorder by name" — so don't let the (default-on)
+    // randomize checkbox silently discard it.
+    document.getElementById('setupRandomize').checked = false;
 
     showStatus(`✓ Imported "${data.leagueName}" — ${n} teams. Review the settings below, then create the room.`, true);
   }catch(e){
