@@ -37,6 +37,8 @@ This app ships two ways:
   click any player's name to see the details
 - Import from an existing ESPN fantasy league (team names, count, roster format) — public
   or private leagues, via `api/espn.js`
+- Import your own cheat sheet (CSV) to sort the available-players list by your rankings
+  instead of ADP — works for both mock and live drafts (see "Cheat sheet import" below)
 - Live draft board, per-team roster views, and a downloadable results recap
 - Share results with one tap (native share sheet on mobile, clipboard copy on
   desktop) — a round-1 recap plus a link that opens straight to the results
@@ -198,6 +200,19 @@ are sent to `api/espn.js` for that one request only and never stored.
 ESPN's league API is unofficial and undocumented, so treat this as best-effort:
 if it fails, the error message explains why and you can still fill in the
 form manually.
+
+## Cheat sheet import
+
+On the setup screen, upload a cheat sheet CSV to sort the available-players list by
+your own rankings instead of ADP. It accepts the export from this app's own
+[Cheat Sheet Generator](#cheat-sheet-generator) directly, or any CSV with at least
+`Name` and `Rank` columns — `Pos`/`Team` disambiguate players who share a name, and
+`Tier` (if present) shows next to the rank. Players are matched by exact name.
+
+Once a cheat sheet is loaded, both mock and live drafts show a "My cheat sheet / ADP"
+toggle above the player list (defaulting to your cheat sheet) and a Rank column —
+switch back to ADP any time without losing the upload. Rooms created without a cheat
+sheet don't show the toggle at all.
 
 ## Data
 

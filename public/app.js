@@ -20,6 +20,7 @@ let IDENTITY = {name:null, teamIdx:null};
 let COMMISH_TOKEN = null; // this browser's commissioner secret, if it holds one
 let posFilter = 'ALL';
 let searchTerm = '';
+let sortMode = 'adp'; // 'adp' or 'cheatsheet' — toggled on the draft screen when CONFIG.cheatSheet exists
 let rosterViewIdx = null;
 let pollTimer = null;
 let currentScreen = 'loading';
@@ -283,10 +284,13 @@ function buildSetupForm(preserve){
     setupKeepers = [];
     setupSkips = [];
     setupCustomStatDefs = [];
+    setupCheatSheet = null;
+    document.getElementById('cheatSheetFile').value = '';
   }
   renderSetupKeepers();
   renderSetupSkips();
   renderSetupCustomStats();
+  renderCheatSheetStatus();
 }
 
 // Attached once (not inside buildSetupForm, which reruns every time the
@@ -512,6 +516,97 @@ window.removeSetupCustomStat = function(idx){
   renderSetupCustomStats();
 };
 
+/* ---------------- setup-screen cheat sheet import (staged pre-creation) ---------------- */
+
+let setupCheatSheet = null; // {byId: {playerId: {rank, tier}}, matched, total, fileName}
+
+// Minimal RFC-4180-ish CSV parser: handles quoted fields, escaped quotes
+// ("") inside them, and commas/newlines inside quotes.
+function parseCsv(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if(c === '"'){
+      inQuotes = true;
+    } else if(c === ','){
+      row.push(field); field = '';
+    } else if(c === '\n' || c === '\r'){
+      if(c === '\r' && text[i+1] === '\n') i++;
+      row.push(field); field = '';
+      if(row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else {
+      field += c;
+    }
+  }
+  if(field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function renderCheatSheetStatus(){
+  const el = document.getElementById('cheatSheetStatus');
+  if(!setupCheatSheet){ el.textContent = ''; return; }
+  el.textContent = setupCheatSheet.matched
+    ? `✓ "${setupCheatSheet.fileName}" — matched ${setupCheatSheet.matched} of ${setupCheatSheet.total} players.`
+    : `Couldn't match any players in "${setupCheatSheet.fileName}" — check the Name/Pos/Team columns.`;
+}
+
+function applyCheatSheetCsv(text, fileName){
+  const rows = parseCsv(text.trim());
+  if(rows.length < 2){ toast('That file has no data rows.'); return; }
+  const header = rows[0].map(h=>h.trim().toLowerCase());
+  const nameIdx = header.indexOf('name');
+  const rankIdx = header.indexOf('rank');
+  const tierIdx = header.indexOf('tier');
+  const posIdx = header.indexOf('pos');
+  const teamIdx = header.indexOf('team');
+  if(nameIdx===-1 || rankIdx===-1){
+    toast('CSV needs at least "Name" and "Rank" columns.');
+    return;
+  }
+  const byId = {};
+  let matched = 0, total = 0;
+  for(let r=1;r<rows.length;r++){
+    const row = rows[r];
+    if(!row || !row.length || row.every(c=>c==='')) continue;
+    total++;
+    const name = (row[nameIdx]||'').trim();
+    const rank = parseFloat(row[rankIdx]);
+    if(!name || Number.isNaN(rank)) continue;
+    const pos = posIdx!==-1 ? (row[posIdx]||'').trim().toUpperCase() : null;
+    const team = teamIdx!==-1 ? (row[teamIdx]||'').trim().toUpperCase() : null;
+    const candidates = PLAYERS_RAW.filter(p=>p.name.toLowerCase()===name.toLowerCase());
+    let player = candidates[0];
+    if(candidates.length>1){
+      player = candidates.find(p=>(!pos||p.pos===pos) && (!team||p.team===team)) || candidates[0];
+    }
+    if(!player) continue;
+    byId[player.id] = {rank, tier: tierIdx!==-1 ? (row[tierIdx]||'').trim() : undefined};
+    matched++;
+  }
+  setupCheatSheet = {byId, matched, total, fileName};
+  renderCheatSheetStatus();
+  toast(matched ? `Cheat sheet loaded — ${matched} of ${total} players matched.` : 'No players matched that file.');
+}
+
+document.getElementById('cheatSheetFile').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{ applyCheatSheetCsv(String(reader.result), file.name); }
+    catch(err){ toast('Could not read that file: ' + (err && err.message ? err.message : String(err))); }
+  };
+  reader.onerror = () => toast('Could not read that file.');
+  reader.readAsText(file);
+});
+
 function ordinalSuffix(n){
   const s = ['th','st','nd','rd'], v = n % 100;
   return s[(v-20)%10] || s[v] || s[0];
@@ -699,7 +794,7 @@ document.getElementById('createRoomBtn').addEventListener('click', async ()=>{
   try{
     const {numTeams, teamNames, roster, base} = readSetupForm();
 
-    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, commissionerToken: genToken(), customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}};
+    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, commissionerToken: genToken(), customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}, cheatSheet: setupCheatSheet ? setupCheatSheet.byId : null};
     const res = await storageSet(CFG_KEY, CONFIG, true);
     if(!res.ok){ toast('Could not create room: ' + res.error); return; }
     COMMISH_TOKEN = CONFIG.commissionerToken;
@@ -732,7 +827,7 @@ document.getElementById('mockDraftBtn').addEventListener('click', async ()=>{
     }
 
     MOCK = true;
-    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}};
+    CONFIG = {numTeams, teamNames, roster, baseOrder: base, createdAt: Date.now(), version: 1, customStats: {defs: setupCustomStatDefs.map(d=>({...d})), values:{}}, cheatSheet: setupCheatSheet ? setupCheatSheet.byId : null};
     await storageSet(CFG_KEY, CONFIG, true);
     DRAFT = {status:'lobby', overall:0, picks:[], claims:{}, keepers: setupKeepers.map(k=>({...k})), skips: setupSkips.map(k=>({...k})), version:1};
     for(let i=0;i<numTeams;i++) DRAFT.claims[i] = i===yourTeamIdx ? teamNames[yourTeamIdx] : 'CPU';
@@ -1517,6 +1612,11 @@ document.getElementById('resetRoomBtn').addEventListener('click', async ()=>{
 function enterDraftScreen(){
   buildPosTabs();
   buildRosterTeamSelect();
+  const hasCheatSheet = !!(CONFIG.cheatSheet && Object.keys(CONFIG.cheatSheet).length);
+  sortMode = hasCheatSheet ? 'cheatsheet' : 'adp';
+  document.getElementById('sortToggle').style.display = hasCheatSheet ? 'flex' : 'none';
+  document.getElementById('rankColHead').style.display = hasCheatSheet ? '' : 'none';
+  document.querySelectorAll('.sort-opt').forEach(btn=>btn.classList.toggle('active', btn.dataset.sort===sortMode));
   renderAll();
   showScreen('draft');
   document.getElementById('backToLobbyBtn').textContent = MOCK ? '🎲 New mock draft' : '← Lobby';
@@ -1526,6 +1626,14 @@ function enterDraftScreen(){
     (IDENTITY.teamIdx!==null && IDENTITY.teamIdx!==undefined) ? 'inline-block' : 'none';
   if(DRAFT.status==='complete') showScreen('results'), renderResults();
 }
+
+document.getElementById('sortToggle').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.sort-opt');
+  if(!btn) return;
+  sortMode = btn.dataset.sort;
+  document.querySelectorAll('.sort-opt').forEach(b=>b.classList.toggle('active', b===btn));
+  renderPlayerList();
+});
 
 document.getElementById('renameMyTeamBtn').addEventListener('click', ()=>{
   if(IDENTITY.teamIdx===null || IDENTITY.teamIdx===undefined){ toast('Claim a team first.'); return; }
@@ -1732,16 +1840,31 @@ function renderPlayerList(){
     const q = searchTerm.toLowerCase();
     list = list.filter(p=>p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q));
   }
-  list.sort((a,b)=>a.adp-b.adp);
+  const useCheatSheet = sortMode==='cheatsheet' && CONFIG.cheatSheet;
+  if(useCheatSheet){
+    list.sort((a,b)=>{
+      const ra = CONFIG.cheatSheet[a.id] ? CONFIG.cheatSheet[a.id].rank : Infinity;
+      const rb = CONFIG.cheatSheet[b.id] ? CONFIG.cheatSheet[b.id].rank : Infinity;
+      return ra!==rb ? ra-rb : a.adp-b.adp;
+    });
+  } else {
+    list.sort((a,b)=>a.adp-b.adp);
+  }
   list = list.slice(0,150);
+  const rankColShown = document.getElementById('rankColHead').style.display !== 'none';
 
   body.innerHTML = list.map(p=>{
     const hasInjury = (p.injuries||[]).length && p.injuries[0] !== 'No major injuries on record';
     const injuryBadge = hasInjury ? `<span class="injury-tag" title="${escapeHtml(p.injuries.join(' | '))}">🩹</span>` : '';
     const rec = PRIMARY_REC_POS.has(p.pos) && p.stats ? (p.stats.rec ?? '—') : '—';
+    const cheatEntry = CONFIG.cheatSheet && CONFIG.cheatSheet[p.id];
+    const rankCol = rankColShown
+      ? `<td class="pmeta">${cheatEntry ? (cheatEntry.rank + (cheatEntry.tier ? ` · T${cheatEntry.tier}` : '')) : '—'}</td>`
+      : '';
     return `
     <tr>
       <td class="adp-num">${p.adp}</td>
+      ${rankCol}
       <td>${posPill(p.pos)}</td>
       <td><div class="pname pname-link" onclick="openPlayerModal(${p.id})">${escapeHtml(p.name)} ${injuryBadge}</div><div class="pmeta">${p.team} · ${p.posRank}</div></td>
       <td class="pmeta">${p.age ?? '—'}</td>
@@ -1754,7 +1877,7 @@ function renderPlayerList(){
   }).join('');
 
   if(!list.length){
-    body.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px;">No players match your filters.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="${rankColShown?9:8}" style="text-align:center;color:var(--muted);padding:24px;">No players match your filters.</td></tr>`;
   }
 }
 

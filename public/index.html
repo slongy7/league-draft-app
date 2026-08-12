@@ -170,7 +170,10 @@ select:disabled,input:disabled{opacity:0.4;cursor:not-allowed;}
 .pos-tabs{display:flex;gap:6px;flex-wrap:wrap;}
 .pos-tab{font-size:12px;font-weight:700;padding:6px 11px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;font-family:'JetBrains Mono',monospace;}
 .pos-tab.active{background:var(--turf);color:#08130d;border-color:var(--turf);}
-.search-wrap{display:flex;gap:8px;padding:0 18px 14px;}
+.search-wrap{display:flex;gap:8px;padding:0 18px 14px;align-items:center;}
+.sort-toggle{display:flex;gap:4px;flex-shrink:0;}
+.sort-opt{font-size:11px;font-weight:700;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
+.sort-opt.active{background:var(--steel);color:#08130d;border-color:var(--steel);}
 .search-wrap input{flex:1;}
 table.plist{width:100%;border-collapse:collapse;font-size:13.5px;}
 table.plist thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--muted-2);padding:8px 10px;border-bottom:1px solid var(--line);font-weight:700;position:sticky;top:0;background:var(--panel);}
@@ -463,6 +466,20 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       <div id="setupCustomStatsList" style="margin-top:16px;"></div>
     </div>
 
+    <div class="card">
+      <h3>Cheat sheet (optional)</h3>
+      <p style="color:var(--muted);font-size:13px;margin:-6px 0 14px;">
+        Upload a cheat sheet CSV — exported from this app's own
+        <a href="cheatsheet.html" target="_blank" style="color:var(--steel);">Cheat Sheet Generator</a>,
+        or any CSV with at least "Name" and "Rank" columns (optionally "Pos"/"Team" to
+        disambiguate common names, and "Tier"). Matched players get sorted by your rank
+        instead of ADP in both mock and live drafts, with a "🔀 My cheat sheet / ADP" toggle
+        to switch back any time.
+      </p>
+      <input type="file" id="cheatSheetFile" accept=".csv,text/csv">
+      <div id="cheatSheetStatus" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+    </div>
+
     <p style="color:var(--muted);font-size:13px;margin:0 0 12px;">
       Mock drafts run entirely on this device — no invite link needed. Every other team
       drafts for itself (best player available) so you can practice instantly and re-run it
@@ -616,10 +633,16 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
           <h2>Available players</h2>
           <div class="pos-tabs" id="posTabs"></div>
         </div>
-        <div class="search-wrap"><input type="text" id="searchBox" placeholder="Search players…"></div>
+        <div class="search-wrap">
+          <input type="text" id="searchBox" placeholder="Search players…">
+          <div class="sort-toggle" id="sortToggle" style="display:none;">
+            <button class="sort-opt" data-sort="cheatsheet">My cheat sheet</button>
+            <button class="sort-opt" data-sort="adp">ADP</button>
+          </div>
+        </div>
         <div class="list-scroll">
           <table class="plist">
-            <thead><tr><th>ADP</th><th>Pos</th><th>Player</th><th>Age</th><th>Proj</th><th>Rec</th><th>Bye</th><th></th></tr></thead>
+            <thead><tr><th>ADP</th><th id="rankColHead" style="display:none;">Rank</th><th>Pos</th><th>Player</th><th>Age</th><th>Proj</th><th>Rec</th><th>Bye</th><th></th></tr></thead>
             <tbody id="plistBody"></tbody>
           </table>
         </div>
