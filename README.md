@@ -40,7 +40,8 @@ This app ships two ways:
 - Import your own cheat sheet (CSV) to sort the available-players list by your rankings
   instead of ADP — works for both mock and live drafts (see "Cheat sheet import" below)
 - Live draft board, per-team roster views, and a downloadable results recap — the
-  draft board also stays visible on the results screen once the draft is complete
+  draft board also stays visible on the results screen once the draft is complete,
+  with a "Save as image" button to download it as a PNG (mock or live)
 - Share results with one tap (native share sheet on mobile, clipboard copy on
   desktop) — a round-1 recap plus a link that opens straight to the results
   screen, no extra clicks

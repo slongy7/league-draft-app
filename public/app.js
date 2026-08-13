@@ -1900,51 +1900,191 @@ function renderRoster(){
   }).join('');
 }
 
-function renderBoard(targetId){
-  const table = document.getElementById(targetId || 'boardTable');
+// Shared by the DOM board (renderBoard) and the PNG export (downloadBoardImage)
+// so both always agree on what a round/team cell actually shows.
+function buildBoardData(){
   // Columns follow the actual configured draft order (round 1, left to right),
   // not raw team-list order, so the board matches what was set on setup/lobby.
   const base = CONFIG.baseOrder || [...Array(CONFIG.numTeams).keys()];
-  let thead = '<thead><tr><th class="rnd">RD</th>';
-  for(let i=0;i<CONFIG.numTeams;i++){
-    const teamIdx = base[i];
-    thead += `<th class="${IDENTITY.teamIdx===teamIdx?'you':''}">${escapeHtml(CONFIG.teamNames[teamIdx])}</th>`;
-  }
-  thead += '</tr></thead>';
+  const columns = base.map(teamIdx => ({teamIdx, name: CONFIG.teamNames[teamIdx], isYou: IDENTITY.teamIdx===teamIdx}));
 
   const rounds = totalRounds();
   const sched = buildLiveSchedule();
   const total = sched.length;
   const onClockTeam = DRAFT.overall < total ? sched[DRAFT.overall].teamIdx : null;
   const onClockRound = DRAFT.overall < total ? sched[DRAFT.overall].round : null;
-  let rows = '<tbody>';
+
+  const rows = [];
   for(let r=0;r<rounds;r++){
-    rows += `<tr><td class="rnd">${r+1}</td>`;
-    for(let col=0; col<CONFIG.numTeams; col++){
-      const teamIdx = base[col]; // fixed column per team, ordered by round-1 draft position
+    const cells = base.map(teamIdx=>{
       const keeper = (DRAFT.keepers||[]).find(k=>k.teamIdx===teamIdx && k.round===r+1);
       const skip = (DRAFT.skips||[]).find(k=>k.teamIdx===teamIdx && k.round===r+1);
       const pick = DRAFT.picks.find(pk=>pk.teamIdx===teamIdx && pk.round===r+1);
       const isCurrent = onClockTeam===teamIdx && onClockRound===(r+1);
       if(keeper){
         const p = PLAYERS_RAW.find(pl=>pl.id===keeper.playerId);
-        rows += `<td><div class="cell-pick" style="background:rgba(108,195,230,0.08);border-left:3px solid var(--steel)">
-          <div class="pp">${p?escapeHtml(p.name):'—'}</div><div class="pt">KEEPER · ${p?p.pos:''}</div></div></td>`;
-      } else if(skip){
-        rows += `<td class="cell-empty" style="color:var(--red);">SKIPPED</td>`;
-      } else if(pick){
-        const p = PLAYERS_RAW.find(pl=>pl.id===pick.playerId);
-        rows += `<td><div class="cell-pick" style="background:rgba(255,255,255,0.03);border-left:3px solid ${POS_COLOR[p.pos]}">
-          <div class="pp">${escapeHtml(p.name)}</div><div class="pt">${p.pos} · ${p.team}</div></div></td>`;
-      } else {
-        rows += `<td class="cell-empty ${isCurrent?'cell-onclock':''}">${isCurrent?'●':'—'}</td>`;
+        return {type:'keeper', name: p?p.name:'—', sub: `KEEPER · ${p?p.pos:''}`};
       }
-    }
-    rows += '</tr>';
+      if(skip) return {type:'skip'};
+      if(pick){
+        const p = PLAYERS_RAW.find(pl=>pl.id===pick.playerId);
+        return {type:'pick', name: p.name, sub: `${p.pos} · ${p.team}`, pos: p.pos};
+      }
+      return {type:'empty', isCurrent};
+    });
+    rows.push(cells);
   }
+  return {columns, rows};
+}
+
+function renderBoard(targetId){
+  const table = document.getElementById(targetId || 'boardTable');
+  const {columns, rows: dataRows} = buildBoardData();
+
+  let thead = '<thead><tr><th class="rnd">RD</th>';
+  columns.forEach(col=>{
+    thead += `<th class="${col.isYou?'you':''}">${escapeHtml(col.name)}</th>`;
+  });
+  thead += '</tr></thead>';
+
+  let rows = '<tbody>';
+  dataRows.forEach((cells, r)=>{
+    rows += `<tr><td class="rnd">${r+1}</td>`;
+    cells.forEach(cell=>{
+      if(cell.type==='keeper'){
+        rows += `<td><div class="cell-pick" style="background:rgba(108,195,230,0.08);border-left:3px solid var(--steel)">
+          <div class="pp">${escapeHtml(cell.name)}</div><div class="pt">${escapeHtml(cell.sub)}</div></div></td>`;
+      } else if(cell.type==='skip'){
+        rows += `<td class="cell-empty" style="color:var(--red);">SKIPPED</td>`;
+      } else if(cell.type==='pick'){
+        rows += `<td><div class="cell-pick" style="background:rgba(255,255,255,0.03);border-left:3px solid ${POS_COLOR[cell.pos]}">
+          <div class="pp">${escapeHtml(cell.name)}</div><div class="pt">${escapeHtml(cell.sub)}</div></div></td>`;
+      } else {
+        rows += `<td class="cell-empty ${cell.isCurrent?'cell-onclock':''}">${cell.isCurrent?'●':'—'}</td>`;
+      }
+    });
+    rows += '</tr>';
+  });
   rows += '</tbody>';
   table.innerHTML = thead + rows;
 }
+
+function fitText(ctx, text, maxWidth){
+  if(ctx.measureText(text).width <= maxWidth) return text;
+  let t = text;
+  while(t.length>1 && ctx.measureText(t+'…').width>maxWidth) t = t.slice(0,-1);
+  return t+'…';
+}
+
+async function downloadBoardImage(){
+  if(document.fonts && document.fonts.ready) await document.fonts.ready;
+  const {columns, rows} = buildBoardData();
+  const cs = getComputedStyle(document.documentElement);
+  const v = name => cs.getPropertyValue(name).trim();
+  const colors = {
+    bg: v('--bg'), panel2: v('--panel-2'), line: v('--line'), text: v('--text'),
+    muted: v('--muted'), muted2: v('--muted-2'), steel: v('--steel'), red: v('--red'),
+  };
+  const posColor = {QB:v('--pos-qb'), RB:v('--pos-rb'), WR:v('--pos-wr'), TE:v('--pos-te'), DST:v('--pos-dst'), K:v('--pos-k')};
+
+  const rndColW = 46, colW = 156, rowH = 54, headH = 40, padTop = 52, padBottom = 46;
+  const width = rndColW + colW*columns.length;
+  const height = padTop + headH + rowH*rows.length + padBottom;
+  const scale = 2;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width*scale;
+  canvas.height = height*scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = colors.bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = colors.text;
+  ctx.font = '700 20px Teko, sans-serif';
+  ctx.fillText(`${MOCK?'Mock ':''}Draft Board — ${CONFIG.numTeams} teams`, 12, 24);
+
+  const y0 = padTop;
+  ctx.font = '700 11px "JetBrains Mono", monospace';
+  ctx.fillStyle = colors.muted;
+  ctx.fillText('RD', 12, y0+headH/2);
+  let x = rndColW;
+  columns.forEach(col=>{
+    ctx.fillStyle = col.isYou ? colors.steel : colors.muted;
+    ctx.fillText(fitText(ctx, col.name.toUpperCase(), colW-16), x+8, y0+headH/2);
+    x += colW;
+  });
+  ctx.strokeStyle = colors.line;
+  ctx.beginPath(); ctx.moveTo(0, y0+headH); ctx.lineTo(width, y0+headH); ctx.stroke();
+
+  rows.forEach((cells, r)=>{
+    const y = y0+headH + r*rowH;
+    ctx.fillStyle = colors.panel2;
+    ctx.fillRect(0, y, rndColW, rowH);
+    ctx.fillStyle = colors.muted2;
+    ctx.font = '400 12px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(r+1), rndColW/2, y+rowH/2);
+
+    let cx = rndColW;
+    cells.forEach(cell=>{
+      if(cell.type==='pick' || cell.type==='keeper'){
+        ctx.textAlign = 'left';
+        ctx.fillStyle = cell.type==='keeper' ? 'rgba(108,195,230,0.08)' : 'rgba(255,255,255,0.03)';
+        ctx.fillRect(cx, y, colW, rowH);
+        ctx.fillStyle = cell.type==='keeper' ? colors.steel : (posColor[cell.pos]||colors.muted);
+        ctx.fillRect(cx, y, 3, rowH);
+        ctx.fillStyle = colors.text;
+        ctx.font = '700 12.5px Inter, sans-serif';
+        ctx.fillText(fitText(ctx, cell.name, colW-16), cx+10, y+rowH/2-8);
+        ctx.fillStyle = colors.muted;
+        ctx.font = '400 10.5px "JetBrains Mono", monospace';
+        ctx.fillText(fitText(ctx, cell.sub, colW-16), cx+10, y+rowH/2+10);
+      } else if(cell.type==='skip'){
+        ctx.textAlign = 'center';
+        ctx.fillStyle = colors.red;
+        ctx.font = '700 11px "JetBrains Mono", monospace';
+        ctx.fillText('SKIPPED', cx+colW/2, y+rowH/2);
+      } else {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = colors.muted2;
+        ctx.font = '400 14px "JetBrains Mono", monospace';
+        ctx.fillText('—', cx+colW/2, y+rowH/2);
+      }
+      ctx.strokeStyle = colors.line;
+      ctx.strokeRect(cx, y, colW, rowH);
+      cx += colW;
+    });
+  });
+
+  const legendY = padTop + headH + rowH*rows.length + 24;
+  const legendItems = [
+    ['QB', posColor.QB], ['RB', posColor.RB], ['WR', posColor.WR], ['TE', posColor.TE],
+    ['D/ST', posColor.DST], ['K', posColor.K], ['Keeper', colors.steel], ['Skipped', colors.red],
+  ];
+  ctx.textAlign = 'left';
+  ctx.font = '600 11px "JetBrains Mono", monospace';
+  let lx = 12;
+  legendItems.forEach(([label, color])=>{
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(lx+4, legendY, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = colors.muted;
+    ctx.fillText(label, lx+13, legendY);
+    lx += 13 + ctx.measureText(label).width + 16;
+  });
+
+  canvas.toBlob(blob=>{
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `lopog-${MOCK?'mock-':''}draft-board.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+}
+
+document.getElementById('saveBoardImgBtn').addEventListener('click', downloadBoardImage);
 
 document.getElementById('resetPicksBtn').addEventListener('click', async ()=>{
   if(!confirm('Reset all picks and restart this draft? Teams, claims, keepers, and pick restrictions stay put.')) return;
