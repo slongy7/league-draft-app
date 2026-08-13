@@ -1349,8 +1349,24 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
     const oldIdentity = oldRows.map(row => ({
       owner: (row.dataset.owner||'').trim().toLowerCase(),
       name: row.querySelector('input').value.trim().toLowerCase(),
+      display: row.dataset.owner || row.querySelector('input').value.trim() || null,
     }));
     const hadExistingData = oldIdentity.some(id => id.owner || id.name);
+
+    // Importing should never delete a keeper/pick restriction the
+    // commissioner set up without them saying so — if this league has fewer
+    // teams than are currently configured, some keepers/skips would point
+    // past the end of the new list. Confirm before losing them instead of
+    // silently dropping them.
+    const droppedKeepers = setupKeepers.filter(k=>k.teamIdx >= n);
+    const droppedSkips = setupSkips.filter(k=>k.teamIdx >= n);
+    if(droppedKeepers.length || droppedSkips.length){
+      const parts = [];
+      if(droppedKeepers.length) parts.push(`${droppedKeepers.length} keeper${droppedKeepers.length>1?'s':''}`);
+      if(droppedSkips.length) parts.push(`${droppedSkips.length} pick restriction${droppedSkips.length>1?'s':''}`);
+      const ok = confirm(`This league has ${n} teams — fewer than your current setup. Importing will delete ${parts.join(' and ')} assigned to teams beyond slot ${n}. Continue?`);
+      if(!ok) return;
+    }
 
     const numTeamsSel = document.getElementById('setupNumTeams');
     if([...numTeamsSel.options].some(o=>o.value===String(n))){
@@ -1402,9 +1418,27 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
     }
 
     // A shrinking team count could otherwise leave keepers/skips pointing
-    // at a row that no longer exists.
+    // at a row that no longer exists — already confirmed with the
+    // commissioner above.
     setupKeepers = setupKeepers.filter(k=>k.teamIdx < n);
     setupSkips = setupSkips.filter(k=>k.teamIdx < n);
+
+    // A keeper/skip is never deleted just because its team's identity
+    // couldn't be re-matched during import (e.g. an owner left the league
+    // and someone else's team landed in that slot) — it stays put on
+    // whichever team ends up at that index. Flag it instead, so the
+    // commissioner can double-check or reassign it themselves.
+    const newRows = [...document.querySelectorAll('#teamNameList .team-name-row')];
+    const changedIdx = new Set();
+    setupKeepers.concat(setupSkips).forEach(k=>{
+      const oldId = oldIdentity[k.teamIdx];
+      if(!oldId || (!oldId.owner && !oldId.name)) return; // nothing to compare against — first import, not a reassignment
+      const newRow = newRows[k.teamIdx];
+      const newOwner = (newRow.dataset.owner||'').trim().toLowerCase();
+      const newName = newRow.querySelector('input').value.trim().toLowerCase();
+      const sameTeam = oldId.owner ? oldId.owner===newOwner : oldId.name===newName;
+      if(!sameTeam) changedIdx.add(k.teamIdx);
+    });
 
     if(data.roster){
       const r = data.roster;
@@ -1432,7 +1466,11 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
     // randomize checkbox silently discard it.
     document.getElementById('setupRandomize').checked = false;
 
-    showStatus(`✓ Imported "${data.leagueName}" — ${n} teams. Review the settings below, then create the room.`, true);
+    let statusMsg = `✓ Imported "${data.leagueName}" — ${n} teams. Review the settings below, then create the room.`;
+    if(changedIdx.size){
+      statusMsg += ` Heads up: ${changedIdx.size===1 ? 'a team' : `${changedIdx.size} teams`} with an existing keeper or pick restriction couldn't be matched to its previous owner — double-check ${changedIdx.size===1?'that slot':'those slots'} below.`;
+    }
+    showStatus(statusMsg, true);
   }catch(e){
     console.error('ESPN import failed', e);
     showStatus('Could not reach the import service. Try again in a moment.', false);

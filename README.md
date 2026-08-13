@@ -203,6 +203,16 @@ ESPN's league API is unofficial and undocumented, so treat this as best-effort:
 if it fails, the error message explains why and you can still fill in the
 form manually.
 
+Existing keepers and pick restrictions are never silently deleted by an
+import. If the newly-imported league has fewer teams than are currently
+configured, importing would drop any keeper/restriction assigned beyond
+the new team count — the commissioner has to confirm that before it happens,
+or cancel to keep everything as-is. If a team with an existing keeper or
+pick restriction can't be matched back to its previous owner (e.g. the
+league re-shuffled who owns which team), the keeper stays exactly where it
+was rather than being dropped — the status message flags it so the
+commissioner can double-check that slot.
+
 ## Cheat sheet import
 
 On the setup screen, upload a cheat sheet CSV to sort the available-players list by
