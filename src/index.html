@@ -683,6 +683,20 @@ table.board td.rnd{font-family:'JetBrains Mono',monospace;color:var(--muted-2);t
       <div class="eyebrow">Draft Complete</div>
       <h1>That's a wrap.</h1>
     </div>
+    <div class="panel" style="margin-top:16px;">
+      <div class="panel-head"><h2>Draft board</h2></div>
+      <div class="board-wrap"><table class="board" id="resultsBoardTable"></table></div>
+      <div class="legend">
+        <span class="sw"><span class="dotsm" style="background:var(--pos-qb)"></span>QB</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-rb)"></span>RB</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-wr)"></span>WR</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-te)"></span>TE</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-dst)"></span>D/ST</span>
+        <span class="sw"><span class="dotsm" style="background:var(--pos-k)"></span>K</span>
+        <span class="sw"><span class="dotsm" style="background:var(--steel)"></span>Keeper</span>
+        <span class="sw"><span class="dotsm" style="background:var(--red)"></span>Skipped pick</span>
+      </div>
+    </div>
     <div class="teams-grid" id="teamsGrid"></div>
     <div class="results-actions">
       <button class="btn-primary" id="shareResultsBtn">📤 Share results</button>

@@ -39,7 +39,8 @@ This app ships two ways:
   or private leagues, via `api/espn.js`
 - Import your own cheat sheet (CSV) to sort the available-players list by your rankings
   instead of ADP — works for both mock and live drafts (see "Cheat sheet import" below)
-- Live draft board, per-team roster views, and a downloadable results recap
+- Live draft board, per-team roster views, and a downloadable results recap — the
+  draft board also stays visible on the results screen once the draft is complete
 - Share results with one tap (native share sheet on mobile, clipboard copy on
   desktop) — a round-1 recap plus a link that opens straight to the results
   screen, no extra clicks

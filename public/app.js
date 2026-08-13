@@ -1900,8 +1900,8 @@ function renderRoster(){
   }).join('');
 }
 
-function renderBoard(){
-  const table = document.getElementById('boardTable');
+function renderBoard(targetId){
+  const table = document.getElementById(targetId || 'boardTable');
   // Columns follow the actual configured draft order (round 1, left to right),
   // not raw team-list order, so the board matches what was set on setup/lobby.
   const base = CONFIG.baseOrder || [...Array(CONFIG.numTeams).keys()];
@@ -1971,6 +1971,7 @@ function renderResults(){
     </div>`;
   }).join('');
   document.getElementById('newMockFromResultsBtn').style.display = MOCK ? 'inline-block' : 'none';
+  renderBoard('resultsBoardTable');
   updateTopbar();
 }
 
