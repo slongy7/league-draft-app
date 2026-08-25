@@ -990,6 +990,99 @@ async function boot(){
 
 /* ---------------- SETUP screen ---------------- */
 
+// The whole pre-creation setup screen (team names/order, roster format,
+// keepers, pick restrictions, custom stats, cheat sheet) is snapshotted to
+// localStorage so a reload or closed tab never loses it — only "Reset entire
+// room" (which explicitly clears this snapshot) starts over from blank.
+const SETUP_STATE_KEY = 'lopog_setup_draft';
+
+function captureSetupState(){
+  const rows = [...document.querySelectorAll('#teamNameList .team-name-row')];
+  const roster = {};
+  document.querySelectorAll('#rosterConfig select').forEach(sel=>{ roster[sel.dataset.key] = sel.value; });
+  const mockYourTeamSel = document.getElementById('mockYourTeam');
+  const mockYourTeamName = mockYourTeamSel && mockYourTeamSel.selectedIndex>=0
+    ? mockYourTeamSel.options[mockYourTeamSel.selectedIndex].textContent : null;
+  return {
+    numTeams: document.getElementById('setupNumTeams').value,
+    teamRows: rows.map(r=>({name: r.querySelector('input').value, owner: r.dataset.owner||''})),
+    roster,
+    dst: document.getElementById('cfgDST').checked,
+    k: document.getElementById('cfgK').checked,
+    randomize: document.getElementById('setupRandomize').checked,
+    mockSlot: document.getElementById('mockSlot').value,
+    mockYourTeamName,
+    keepers: setupKeepers,
+    skips: setupSkips,
+    customStatDefs: setupCustomStatDefs,
+    cheatSheet: setupCheatSheet,
+  };
+}
+
+function persistSetupState(){
+  try{ localStorage.setItem(SETUP_STATE_KEY, JSON.stringify(captureSetupState())); }catch(e){}
+}
+
+function clearPersistedSetupState(){
+  try{ localStorage.removeItem(SETUP_STATE_KEY); }catch(e){}
+}
+
+// Returns true if a snapshot was found and applied, false if there was
+// nothing to restore (first-ever visit, or already cleared by a reset).
+function restoreSetupState(){
+  let s;
+  try{ s = JSON.parse(localStorage.getItem(SETUP_STATE_KEY)); }catch(e){ return false; }
+  if(!s || !Array.isArray(s.teamRows) || !s.teamRows.length) return false;
+
+  const n = s.teamRows.length;
+  const numTeamsSel = document.getElementById('setupNumTeams');
+  numTeamsSel.value = [...numTeamsSel.options].some(o=>o.value===String(n)) ? String(n) : '10';
+
+  renderTeamNameInputs(n);
+  const rows = [...document.querySelectorAll('#teamNameList .team-name-row')];
+  s.teamRows.forEach((tr,i)=>{
+    const row = rows[i];
+    if(!row) return;
+    row.querySelector('input').value = tr.name || '';
+    row.dataset.owner = tr.owner || '';
+    if(tr.owner){
+      const span = document.createElement('span');
+      span.className = 'oowner';
+      span.textContent = tr.owner;
+      row.appendChild(span);
+    }
+  });
+
+  renderMockSlotOptions(n);
+  if(s.mockSlot && [...document.getElementById('mockSlot').options].some(o=>o.value===s.mockSlot)){
+    document.getElementById('mockSlot').value = s.mockSlot;
+  }
+  renderMockYourTeamOptions(n);
+  if(s.mockYourTeamName){
+    const sel = document.getElementById('mockYourTeam');
+    const match = [...sel.options].find(o=>o.textContent===s.mockYourTeamName);
+    if(match) sel.value = match.value;
+  }
+
+  buildRosterConfigInputs();
+  if(s.roster){
+    document.querySelectorAll('#rosterConfig select').forEach(sel=>{
+      const v = s.roster[sel.dataset.key];
+      if(v!==undefined && [...sel.options].some(o=>o.value===String(v))) sel.value = String(v);
+    });
+  }
+  document.getElementById('cfgDST').checked = !!s.dst;
+  document.getElementById('cfgK').checked = !!s.k;
+  document.getElementById('setupRandomize').checked = !!s.randomize;
+
+  setupKeepers = Array.isArray(s.keepers) ? s.keepers : [];
+  setupSkips = Array.isArray(s.skips) ? s.skips : [];
+  setupCustomStatDefs = Array.isArray(s.customStatDefs) ? s.customStatDefs : [];
+  setupCheatSheet = s.cheatSheet || null;
+
+  return true;
+}
+
 // preserve=true keeps whatever's already configured (team names/count,
 // roster format, keepers, pick restrictions, custom stats) instead of
 // wiping it back to blank defaults — used when returning to setup from an
@@ -997,22 +1090,39 @@ async function boot(){
 // last setup rather than making you redo it (re-import included).
 function buildSetupForm(preserve){
   if(!preserve){
-    renderTeamNameInputs(10);
-    renderMockSlotOptions(10);
-    renderMockYourTeamOptions(10);
-    document.getElementById('setupNumTeams').value = '10';
-    buildRosterConfigInputs();
-    setupKeepers = [];
-    setupSkips = [];
-    setupCustomStatDefs = [];
-    setupCheatSheet = null;
-    document.getElementById('cheatSheetFile').value = '';
+    if(!restoreSetupState()){
+      renderTeamNameInputs(10);
+      renderMockSlotOptions(10);
+      renderMockYourTeamOptions(10);
+      document.getElementById('setupNumTeams').value = '10';
+      buildRosterConfigInputs();
+      setupKeepers = [];
+      setupSkips = [];
+      setupCustomStatDefs = [];
+      setupCheatSheet = null;
+      document.getElementById('cheatSheetFile').value = '';
+    }
   }
   renderSetupKeepers();
   renderSetupSkips();
   renderSetupCustomStats();
   renderCheatSheetStatus();
+  persistSetupState();
 }
+
+// A single delegated listener catches virtually every organic setup-screen
+// change (typing team names, toggling roster/checkbox settings, add/remove
+// keeper-skip-custom stat buttons, drag-reorder drops) without needing a
+// persist call wired into each individual handler.
+let persistSetupTimer = null;
+function schedulePersistSetupState(){
+  clearTimeout(persistSetupTimer);
+  persistSetupTimer = setTimeout(persistSetupState, 250);
+}
+document.getElementById('screenSetup').addEventListener('input', schedulePersistSetupState);
+document.getElementById('screenSetup').addEventListener('change', schedulePersistSetupState);
+document.getElementById('screenSetup').addEventListener('click', schedulePersistSetupState);
+document.getElementById('screenSetup').addEventListener('drop', schedulePersistSetupState);
 
 // Attached once (not inside buildSetupForm, which reruns every time the
 // setup screen is (re)entered) so teams/slot options never fall out of sync
@@ -2192,6 +2302,7 @@ document.getElementById('espnImportBtn').addEventListener('click', async ()=>{
       statusMsg += ` Heads up: ${changedIdx.size===1 ? 'a team' : `${changedIdx.size} teams`} with an existing keeper or pick restriction couldn't be matched to its previous owner — double-check ${changedIdx.size===1?'that slot':'those slots'} below.`;
     }
     showStatus(statusMsg, true);
+    persistSetupState(); // DOM was updated programmatically — the delegated input/change/click listeners won't have fired for it
   }catch(e){
     console.error('ESPN import failed', e);
     showStatus('Could not reach the import service. Try again in a moment.', false);
@@ -2362,6 +2473,7 @@ document.getElementById('resetRoomBtn').addEventListener('click', async ()=>{
   await storageDelete(CFG_KEY, true);
   await storageDelete(DRAFT_KEY, true);
   CONFIG = null; DRAFT = null;
+  clearPersistedSetupState(); // this is the one explicit "reset" that's allowed to wipe staged keepers/skips/etc.
   buildSetupForm();
   showScreen('setup');
 });

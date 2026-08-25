@@ -23,7 +23,10 @@ This app ships two ways:
   - Draft order (shuffle, or manually reorder teams any time)
   - Keepers (assign a player to a team pre-draft; costs that team's pick in a chosen round —
     can be set right on the setup screen before creating the room, or added later from the
-    lobby; also works for mock drafts, which skip the lobby entirely)
+    lobby; also works for mock drafts, which skip the lobby entirely). Keepers set on the
+    setup screen survive a reload or closed tab — the whole setup screen (team names/order,
+    roster format, keepers, pick restrictions, custom stats) is saved to this browser as you
+    go and only clears via "Reset entire room."
   - Pick restrictions (block a team from picking in a specific round — can also be set on
     the setup screen before creating the room, or added later from the lobby; works for
     mock drafts too)
