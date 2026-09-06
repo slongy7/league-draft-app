@@ -102,6 +102,10 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
 .fit-neutral{color:var(--muted-2);}
 .kept-btn{background:transparent;border:1px solid var(--line);color:var(--muted);padding:5px 10px;font-size:11.5px;border-radius:6px;}
 .kept-btn:hover{border-color:var(--bad);color:var(--bad);}
+.move-cell{white-space:nowrap;padding:4px !important;}
+.move-btn{background:transparent;border:1px solid var(--line);color:var(--muted);width:18px;height:16px;font-size:8px;line-height:1;padding:0;border-radius:3px;display:block;margin:1px 0;}
+.move-btn:hover:not(:disabled){border-color:var(--rust);color:var(--rust-bright);}
+.move-btn:disabled{opacity:0.25;cursor:default;}
 .detail-row td{background:var(--bg-2);padding:16px 20px;border-bottom:2px solid var(--rust-dim);}
 .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;}
 .detail-stat{display:flex;flex-direction:column;gap:3px;}
@@ -158,7 +162,7 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
 
 @media print{
   body{background:#fff;color:#111;}
-  .controls,.tabs,.bulkbar,.removed-section,.topbar-right,.btn-primary,.btn-secondary,.btn-ghost,.btn-danger,.kept-btn{display:none !important;}
+  .controls,.tabs,.bulkbar,.removed-section,.topbar-right,.btn-primary,.btn-secondary,.btn-ghost,.btn-danger,.kept-btn,.move-cell{display:none !important;}
   .card{border:none;background:#fff;padding:0;}
   thead th{background:#fff;color:#333;border-bottom:2px solid #999;}
   tbody tr{border-bottom:1px solid #ccc;}
@@ -215,6 +219,7 @@ td.num{font-family:'JetBrains Mono',monospace;text-align:right;}
         <button class="btn-secondary" id="printBtn">Print</button>
         <button class="btn-ghost" id="resetRemovedBtn">Reset kept list</button>
         <button class="btn-ghost" id="clearExpertBtn">Clear FantasyPros ranks</button>
+        <button class="btn-ghost" id="resetOrderBtn">Reset my order</button>
       </div>
     </div>
 
@@ -414,6 +419,7 @@ const LS = {
   numTeams: LS_PREFIX+'num_teams_v1',
   expertRank: LS_PREFIX+'expert_rank_v1',
   scoring: LS_PREFIX+'scoring_v1',
+  customOrder: LS_PREFIX+'custom_order_v1',
 };
 
 function loadJSON(key, fallback){
@@ -430,6 +436,7 @@ const state = {
   numTeams: loadJSON(LS.numTeams, 12),
   expertRank: loadJSON(LS.expertRank, {}), // {playerId: rank} — commissioner-entered FantasyPros ECR (or any expert) rank
   scoring: Object.assign({}, DEFAULT_SCORING, loadJSON(LS.scoring, {})),
+  customOrder: loadJSON(LS.customOrder, []), // [playerId,...] — your hand-dragged rank; empty until you first move a player
   search: '',
   pos: 'ALL',
   team: 'ALL',
@@ -448,6 +455,7 @@ function persistStrategy(){ saveJSON(LS.strategy, state.strategy); }
 function persistNumTeams(){ saveJSON(LS.numTeams, state.numTeams); }
 function persistExpertRank(){ saveJSON(LS.expertRank, state.expertRank); }
 function persistScoring(){ saveJSON(LS.scoring, state.scoring); }
+function persistCustomOrder(){ saveJSON(LS.customOrder, state.customOrder); }
 
 function esc(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -625,37 +633,74 @@ function adpDiff(p){
 
 /* ---------------- filtering / sorting ---------------- */
 
+// Unranked/unordered players sink to the bottom of an ascending sort instead
+// of floating to the top ahead of rank #1 — Infinity always sorts last.
+function manualOrderIndex(id){
+  const idx = state.customOrder.indexOf(id);
+  return idx === -1 ? Infinity : idx;
+}
+
+function sortComparator(a, b){
+  const dir = state.sortDir === 'asc' ? 1 : -1;
+  let av, bv;
+  if(state.sortKey === 'rec'){ av = (a.stats.rec||0); bv = (b.stats.rec||0); }
+  else if(state.sortKey === 'projPts'){ av = computeProjPts(a); bv = computeProjPts(b); }
+  else if(state.sortKey === 'expertRank'){
+    av = state.expertRank[a.id] != null ? Number(state.expertRank[a.id]) : Infinity;
+    bv = state.expertRank[b.id] != null ? Number(state.expertRank[b.id]) : Infinity;
+  }
+  else if(state.sortKey === 'adpDiff'){ av = adpDiff(a) || 0; bv = adpDiff(b) || 0; }
+  else if(state.sortKey === 'manual'){ av = manualOrderIndex(a.id); bv = manualOrderIndex(b.id); }
+  else if(state.sortKey.startsWith('custom:')){
+    const key = state.sortKey.slice(7);
+    av = Number((state.customValues[a.id]||{})[key]) || 0;
+    bv = Number((state.customValues[b.id]||{})[key]) || 0;
+  }
+  else { av = a[state.sortKey]; bv = b[state.sortKey]; }
+  if(typeof av === 'string') return av.localeCompare(bv) * dir;
+  return ((av||0) - (bv||0)) * dir;
+}
+
 function visiblePlayers(){
   let list = PLAYERS.filter(p => state.showRemoved ? true : !state.removed.has(p.id));
-  if(!state.showRemoved) {} // removed already excluded above unless toggle on
   if(state.pos !== 'ALL') list = list.filter(p => p.pos === state.pos);
   if(state.team !== 'ALL') list = list.filter(p => p.team === state.team);
   if(state.search.trim()){
     const q = state.search.trim().toLowerCase();
     list = list.filter(p => p.name.toLowerCase().includes(q));
   }
-  const dir = state.sortDir === 'asc' ? 1 : -1;
-  list = list.slice().sort((a,b) => {
-    let av, bv;
-    if(state.sortKey === 'rec'){ av = (a.stats.rec||0); bv = (b.stats.rec||0); }
-    else if(state.sortKey === 'projPts'){ av = computeProjPts(a); bv = computeProjPts(b); }
-    else if(state.sortKey === 'expertRank'){
-      // Unranked players (not on the imported list) sink to the bottom of an
-      // ascending sort instead of floating to the top ahead of rank #1.
-      av = state.expertRank[a.id] != null ? Number(state.expertRank[a.id]) : Infinity;
-      bv = state.expertRank[b.id] != null ? Number(state.expertRank[b.id]) : Infinity;
-    }
-    else if(state.sortKey === 'adpDiff'){ av = adpDiff(a) || 0; bv = adpDiff(b) || 0; }
-    else if(state.sortKey.startsWith('custom:')){
-      const key = state.sortKey.slice(7);
-      av = Number((state.customValues[a.id]||{})[key]) || 0;
-      bv = Number((state.customValues[b.id]||{})[key]) || 0;
-    }
-    else { av = a[state.sortKey]; bv = b[state.sortKey]; }
-    if(typeof av === 'string') return av.localeCompare(bv) * dir;
-    return ((av||0) - (bv||0)) * dir;
-  });
-  return list;
+  return list.slice().sort(sortComparator);
+}
+
+// Seeds a full ranking (all players, not just what's currently filtered) from
+// whatever sort was active before the player started hand-reordering, so
+// "start moving players" feels like a fork of the current view rather than a
+// jump back to ADP order.
+function ensureManualOrderSeeded(){
+  if(state.customOrder.length) return;
+  state.customOrder = PLAYERS.slice().sort(sortComparator).map(p => p.id);
+  persistCustomOrder();
+}
+
+function movePlayer(id, dir){
+  id = Number(id);
+  if(state.sortKey !== 'manual'){
+    ensureManualOrderSeeded();
+    state.sortKey = 'manual';
+    state.sortDir = 'asc';
+  }
+  const list = visiblePlayers();
+  const idx = list.findIndex(p => p.id === id);
+  const neighborIdx = idx + dir;
+  if(idx === -1 || neighborIdx < 0 || neighborIdx >= list.length){ render(); return; }
+  const a = state.customOrder.indexOf(id);
+  const b = state.customOrder.indexOf(list[neighborIdx].id);
+  if(a === -1 || b === -1){ render(); return; }
+  const tmp = state.customOrder[a];
+  state.customOrder[a] = state.customOrder[b];
+  state.customOrder[b] = tmp;
+  persistCustomOrder();
+  render();
 }
 
 /* ---------------- rendering: players tab ---------------- */
@@ -669,6 +714,7 @@ function renderHead(){
   const cols = [
     {key:'stripe', label:''},
     {key:'sel', label:''},
+    {key:'move', label:''},
     {key:'rank', label:'#'},
     {key:'tier', label:'Tier'},
     {key:'name', label:'Player'},
@@ -684,9 +730,11 @@ function renderHead(){
   let html = cols.map(c => {
     if(c.key==='stripe') return `<th style="width:4px;padding:0;"></th>`;
     if(c.key==='sel') return `<th style="width:26px;"></th>`;
-    const sorted = state.sortKey===c.key || (c.key==='rank' && state.sortKey==='adp');
+    if(c.key==='move') return `<th style="width:24px;"></th>`;
+    const sorted = state.sortKey===c.key || (c.key==='rank' && (state.sortKey==='adp' || state.sortKey==='manual'));
     const title = c.key==='expertRank' ? ' title="Expert Consensus Ranking (ECR) — edit inline, or use Import FantasyPros ranks"'
-      : c.key==='adpDiff' ? ' title="ADP minus ECR. Green = more valuable pick (ADP later than ECR, a value/sleeper). Red = less valuable pick (ADP earlier than ECR, a reach)."' : '';
+      : c.key==='adpDiff' ? ' title="ADP minus ECR. Green = more valuable pick (ADP later than ECR, a value/sleeper). Red = less valuable pick (ADP earlier than ECR, a reach)."'
+      : c.key==='rank' ? (state.customOrder.length ? ' title="Your hand-reordered rank — click to switch back to it"' : ' title="ADP"') : '';
     return `<th data-sort="${c.key}" class="${sorted?'sorted':''}"${title}>${esc(c.label)}</th>`;
   }).join('');
   state.customStats.forEach(cs => {
@@ -696,7 +744,7 @@ function renderHead(){
   tr.innerHTML = html;
 }
 
-function renderRow(p, idx){
+function renderRow(p, idx, total){
   const gradeInfo = offenseGrades[p.team];
   const fit = state.strategy!=='bpa' ? strategyFit(p, state.strategy, state.numTeams) : null;
   const tier = tierMap[p.id];
@@ -707,6 +755,10 @@ function renderRow(p, idx){
   let row = `<tr data-id="${p.id}" class="${state.expanded===p.id?'expanded':''}" style="background:${rowBg};">`;
   row += `<td class="tier-stripe" style="background:${tColor};"></td>`;
   row += `<td><input type="checkbox" class="rowcheck" data-id="${p.id}" ${isSelected?'checked':''}></td>`;
+  row += `<td class="move-cell">
+    <button class="move-btn" data-move="up" data-id="${p.id}" ${idx===0?'disabled':''} title="Move up your list">▲</button>
+    <button class="move-btn" data-move="down" data-id="${p.id}" ${idx===total-1?'disabled':''} title="Move down your list">▼</button>
+  </td>`;
   row += `<td class="mono">${idx+1}</td>`;
   row += `<td><span class="tier-badge" style="color:${tColor};border-color:${tColor};" title="Tier ${tier} — grouped by where ${esc(p.pos)} talent drops off">T${tier}</span></td>`;
   row += `<td><div class="player-cell" data-toggle="${p.id}"><span class="pname">${esc(p.name)}${isRemoved?' <span style="color:var(--bad);font-size:11px;">(kept)</span>':''}</span><span class="pmeta">${esc(p.team)} · Bye ${p.bye} · ${esc(p.posRank)} · ADP ${p.adp}</span></div></td>`;
@@ -832,7 +884,7 @@ function renderPlayersTab(){
         html += renderTierDivider(t, list);
         lastTier = t;
       }
-      html += renderRow(p,i);
+      html += renderRow(p,i,list.length);
     });
     tbody.innerHTML = html;
   }
@@ -1073,12 +1125,13 @@ function setExpertRank(id, value){
 
 function exportCsv(){
   const list = visiblePlayers();
-  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','ECR','ECRDiff', ...state.customStats.map(cs=>cs.label)];
+  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','ECR','ECRDiff','MyRank', ...state.customStats.map(cs=>cs.label)];
   const rows = list.map((p,i) => {
     const grade = offenseGrades[p.team] ? offenseGrades[p.team].grade : '';
     const custom = state.customStats.map(cs => (state.customValues[p.id]||{})[cs.key] || '');
     const diff = adpDiff(p);
-    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, computeProjPts(p), p.stats.rec||'', grade, state.expertRank[p.id]||'', diff==null?'':diff, ...custom];
+    const myRankIdx = state.customOrder.indexOf(p.id);
+    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, computeProjPts(p), p.stats.rec||'', grade, state.expertRank[p.id]||'', diff==null?'':diff, myRankIdx===-1?'':myRankIdx+1, ...custom];
   });
   const csv = [headers, ...rows].map(r => r.map(v => {
     const s = String(v==null?'':v);
@@ -1154,6 +1207,14 @@ function attachEvents(){
     persistExpertRank();
     render();
   });
+  document.getElementById('resetOrderBtn').addEventListener('click', () => {
+    if(!state.customOrder.length) return;
+    if(!confirm('Reset your hand-reordered list? This only clears your manual order — kept players, ECR, and custom stats are untouched.')) return;
+    state.customOrder = [];
+    persistCustomOrder();
+    if(state.sortKey === 'manual'){ state.sortKey = 'adp'; state.sortDir = 'asc'; }
+    render();
+  });
 
   const importOverlay = document.getElementById('importModalOverlay');
   const importTextarea = document.getElementById('importTextarea');
@@ -1217,10 +1278,10 @@ function attachEvents(){
     if(theadSort && theadSort.closest('#playersTable')){
       const key = theadSort.dataset.sort;
       if(e.target.closest('[data-remove-stat]')) return;
-      const actualKey = key === 'rank' ? 'adp' : key;
-      if(!['adp','name','pos','bye','projPts','rec','expertRank','adpDiff'].includes(actualKey) && !actualKey.startsWith('custom:')) return;
+      const actualKey = key === 'rank' ? (state.customOrder.length ? 'manual' : 'adp') : key;
+      if(!['adp','name','pos','bye','projPts','rec','expertRank','adpDiff','manual'].includes(actualKey) && !actualKey.startsWith('custom:')) return;
       if(state.sortKey === actualKey) state.sortDir = state.sortDir==='asc' ? 'desc' : 'asc';
-      else { state.sortKey = actualKey; state.sortDir = actualKey==='name'||actualKey==='pos' ? 'asc' : 'desc'; if(actualKey==='adp'||actualKey==='expertRank') state.sortDir='asc'; }
+      else { state.sortKey = actualKey; state.sortDir = actualKey==='name'||actualKey==='pos' ? 'asc' : 'desc'; if(actualKey==='adp'||actualKey==='expertRank'||actualKey==='manual') state.sortDir='asc'; }
       renderPlayersTab();
       return;
     }
@@ -1254,6 +1315,9 @@ function attachEvents(){
 
     const toggleKeptBtn = e.target.closest('[data-toggle-kept]');
     if(toggleKeptBtn){ toggleKept(toggleKeptBtn.dataset.toggleKept); return; }
+
+    const moveBtn = e.target.closest('[data-move]');
+    if(moveBtn && !moveBtn.disabled){ movePlayer(moveBtn.dataset.id, moveBtn.dataset.move==='up' ? -1 : 1); return; }
 
     const playerCell = e.target.closest('[data-toggle]');
     if(playerCell){

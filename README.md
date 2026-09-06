@@ -100,6 +100,12 @@ in that browser's `localStorage`).
   Zero RB, Robust RB, Zero WR, Late-Round QB, Stream DST/K) and it flags
   players on the Players tab as a round-based "Priority" or "Fade" fit for
   that build.
+- **Your own order**: ▲/▼ buttons on every row let you hand-rank players —
+  the first click forks your current sort (ADP, ECR, whatever) into an
+  editable list; from there it's independent of every other sort. Click the
+  "#" column header to jump back to it once you've started. Reorder while
+  filtered to a position and it moves the player relative to its filtered
+  neighbor, leaving other positions' relative order alone.
 - Export the current view to CSV, or print a clean black-and-white sheet.
 
 ## Project structure
