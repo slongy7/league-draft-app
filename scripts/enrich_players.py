@@ -4,9 +4,10 @@ Enriches src/players.json with age, injury history, projected season points,
 and a fuller stat line (including receptions for RBs) beyond the base
 name/pos/team/bye/adp/posRank fields.
 
-Ages and injury notes for the highest-drafted ~90 players are hand-curated
-from public reporting (training camp / injury reports, draft-round context)
-current as of the 2026 preseason. Everyone else gets a deterministic,
+Ages and injury notes for the highest-drafted ~90 players (plus a handful of
+well-known names further down) are hand-curated from public reporting
+(training camp / injury reports, roster moves) current as of Week 1 of the
+2026 season (Sept. 6, 2026). Everyone else gets a deterministic,
 formula-based estimate derived from position + positional rank, clearly
 editable later via the app's custom-stats feature — this is meant as a
 reasonable starting point, not a guarantee of accuracy.
@@ -29,26 +30,32 @@ CURATED = {
     13: (29, ["ACL tear (2020) — long since recovered"]), 14: (23, ["Minor ankle injury, rookie season"]),
     15: (25, ["Concussion (2023)", "Toe injury (2024, missed games)"]), 16: (27, []),
     17: (24, ["Minor knee soreness (2025)"]), 18: (25, []),
+    121: (31, ["Undisclosed injury (early Sept. 2026) — Week 1 availability in doubt"]),
+    143: (25, ["Suspended for the first 4 games of the 2026 season"]),
+    237: (26, ["On injured reserve to start the 2026 season, with a return designation"]),
     19: (25, ["Oblique injury (2023)", "Ankle injury (2024, missed games)"]),
     20: (29, ["Hamstring issues (2022)", "Knee injury (2024)"]),
     21: (32, ["History of calf/foot injuries early career; durable recently"]),
-    22: (27, ["Groin injury (2024, missed games)"]), 23: (26, []), 24: (21, []),
+    22: (27, ["Groin injury (2024, missed games)"]), 23: (26, []),
+    24: (21, ["Ankle injury (Aug. 2026) — considered a 50/50 call for Week 1"]),
     25: (25, []), 26: (26, ["ACL/LCL tear (2024) — recovering"]), 27: (27, []),
     28: (30, ["Minor shoulder soreness (2024)"]),
     29: (26, ["Multiple concussions (2023-24) — monitored closely"]),
-    30: (25, ["Torn ACL (2022) — fully recovered"]), 31: (25, ["Ankle sprain (2023)"]),
+    30: (25, ["Torn ACL (2022) — fully recovered", "Groin injury (Aug. 18, 2026) — Week 1 availability in question, team is hopeful he returns"]),
+    31: (25, ["Ankle sprain (2023)"]),
     32: (26, ["Knee injury (2024, missed a playoff game)"]),
     33: (26, ["ACL/LCL tear (2022) — recovered"]), 34: (23, []), 35: (28, []),
     36: (27, ["Recurring hamstring injuries (2022-24)"]), 37: (26, []), 38: (23, []),
     39: (22, ["Minor knee injury, rookie camp"]),
     40: (27, ["Fractured foot (2021 rookie year, missed season) — healthy since"]),
-    41: (23, ["ACL and meniscus tear (late 2025) — offseason surgery, recovering for 2026"]),
-    42: (24, ["Deltoid ligament tear, ankle dislocation, compound fracture (late 2025) — cleared for 2026 camp"]),
+    41: (23, ["ACL and meniscus tear (late 2025) — offseason surgery; practicing in August but non-committal on a Week 1 return, will play if medically cleared"]),
+    42: (24, ["Deltoid ligament tear, ankle dislocation, compound fracture (late 2025) — cleared for 2026 camp and a full training-camp participant; GM called him \"good to go\""]),
     43: (24, []), 44: (27, []), 45: (30, ["Minor quad injury (2024)"]), 46: (21, []),
     47: (33, []), 48: (29, ["Knee/hamstring injuries limited him late 2024"]), 49: (27, []),
     50: (29, ["Knee injury (2024, missed time)"]),
     51: (21, []), 52: (25, ["ACL tear (2022 rookie year) — fully recovered"]), 53: (23, []),
-    54: (23, []), 55: (29, []), 56: (23, ["Minor shoulder injury (2024)"]),
+    54: (23, ["Ankle injury (Aug. 24, 2026) — hasn't practiced since, Week 1 status uncertain"]),
+    55: (29, []), 56: (23, ["Minor shoulder injury (2024)"]),
     57: (33, ["Hamstring strain (2024, missed a few games)"]), 58: (23, []), 59: (24, []),
     60: (24, []), 61: (27, ["Torn ACL (late 2024) — recovering"]),
     62: (29, ["Wrist and turf toe injuries (2024, missed significant time)", "ACL tear (2020)"]),
@@ -57,7 +64,7 @@ CURATED = {
     68: (28, ["Concussion (2024)", "Minor shoulder soreness"]), 69: (27, []), 70: (24, []),
     71: (24, []), 72: (29, ["Fractured fibula (2022 playoffs) — recovered"]), 73: (22, []),
     74: (28, []), 75: (25, ["ACL injury (2025) — expects to play Week 1, 2026"]),
-    76: (26, ["Ankle surgery (offseason 2026) — opened camp on PUP, behind original recovery timeline"]),
+    76: (26, ["Ankle surgery (offseason 2026) — opened camp on PUP; doing individual drills as of early Sept. 2026, but the team has given no game-return timeline"]),
     77: (27, []), 78: (28, ["Recurring fumbling/ankle issues (2024) — no structural injury"]),
     79: (26, ["MCL sprain (2022) — long since recovered"]), 80: (30, ["ACL tear (2020) — long since recovered"]),
     81: (25, []), 82: (21, []), 83: (28, ["Fractured finger (2024) — played through"]),
@@ -71,10 +78,10 @@ CURATED = {
 # curate those too so their age/injury notes aren't obviously wrong.
 CURATED.update({
     91: (30, ["ACL tear and dislocated ankle (2023) — recovered"]),
-    93: (22, ["ACL tear in college (2023) — recovered"]),
+    93: (22, ["ACL tear in college (2023) — recovered", "Knee soreness (late Aug. 2026) — limited in practice, but the team is optimistic he's ready for Week 1"]),
     94: (26, []), 95: (38, ["Chronic back issues managed with rest (2024)"]),
     97: (32, ["Occasional calf/hamstring tightness"]),
-    100: (27, ["ACL tear (2021)", "Achilles injury (2023)", "Knee injury (2024) — extensive injury history"]),
+    100: (27, ["ACL tear (2021)", "Achilles injury (2023)", "Knee injury (2024) — extensive injury history", "Ankle sprain (practice, late Aug. 2026) — questionable for Week 1"]),
     101: (25, ["PCL/knee swelling (2025) — limited practice, monitored into 2026"]),
     102: (30, ["High ankle sprain (playoffs, historical) — no recent structural injury"]),
     109: (36, ["Minor knee soreness (2024)"]),
@@ -93,7 +100,7 @@ CURATED.update({
     176: (32, ["Wrist injury (2024, season-ending)", "Recurring ankle issues"]),
     191: (42, ["Achilles tear (2023, missed nearly full season) — recovered"]),
     202: (33, ["Recurring ankle and hamstring injuries past few seasons"]),
-    207: (28, ["ACL/MCL tear (Oct. 2024) — recovery timeline uncertain for 2026"]),
+    207: (28, ["On the Reserve/Left Squad list — publicly refused (July 2026) to reinstate with the 49ers; effectively a non-factor in San Francisco, trade or release possible"]),
     222: (23, ["Meniscus tear (2024, missed rookie season) — returning for 2026"]),
     240: (36, []),
     244: (28, ["History of multiple concussions (2022, 2024) — notable injury concern"]),

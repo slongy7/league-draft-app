@@ -696,6 +696,17 @@ async function importEspnLeague(){
     Object.keys(sc).forEach(k => { if(typeof sc[k] === 'number') state.scoring[k] = sc[k]; });
     persistScoring();
     document.getElementById('pprInput').value = state.scoring.reception;
+
+    let keptCount = 0, unmatchedCount = 0;
+    const syncKeepers = document.getElementById('espnSyncKeepers2').checked;
+    if(syncKeepers && Array.isArray(data.rosteredPlayers)){
+      data.rosteredPlayers.forEach(rp => {
+        const player = matchPlayerByName(rp.name);
+        if(player){ state.removed.add(player.id); keptCount++; }
+        else unmatchedCount++;
+      });
+      if(keptCount) persistRemoved();
+    }
     render();
 
     const parts = [];
@@ -705,8 +716,13 @@ async function importEspnLeague(){
       const rosterStr = ['QB','RB','WR','TE','FLEX','DST','K','BN'].filter(k => r[k]).map(k => `${r[k]}${k}`).join('/');
       if(rosterStr) parts.push(rosterStr);
     }
-    setStatus(`Imported "${data.leagueName}" — ${state.numTeams} teams${parts.length ? ', ' + parts.join(', ') : ''}. Scoring ESPN didn't report keeps this app's current value.`, 'var(--good)');
-    setTimeout(() => { overlay.hidden = true; }, 2600);
+    let msg = `Imported "${data.leagueName}" — ${state.numTeams} teams${parts.length ? ', ' + parts.join(', ') : ''}. Scoring ESPN didn't report keeps this app's current value.`;
+    if(syncKeepers){
+      msg += ` Marked ${keptCount} rostered player${keptCount===1?'':'s'} kept/unavailable`;
+      msg += unmatchedCount ? ` (${unmatchedCount} name${unmatchedCount===1?'':'s'} from ESPN didn't match this app's player pool — check the Kept section and Reset kept list if something looks off).` : '.';
+    }
+    setStatus(msg, 'var(--good)');
+    setTimeout(() => { overlay.hidden = true; }, syncKeepers ? 5000 : 2600);
   }catch(e){
     setStatus('Could not reach the import service. Try again in a moment.', 'var(--bad)');
   }finally{

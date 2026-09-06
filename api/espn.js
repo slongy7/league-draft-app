@@ -5,7 +5,8 @@
 //
 // POST /api/espn  { leagueId, season, espnS2?, swid? }
 //   -> { leagueName, numTeams, teams:[{id,name,owner}], roster:{QB,RB,WR,TE,FLEX,DST,K,BN},
-//        scoring:{reception?,passYdPt?,passTD?,rushYdPt?,rushTD?,recYdPt?,recTD?} }
+//        scoring:{reception?,passYdPt?,passTD?,rushYdPt?,rushTD?,recYdPt?,recTD?},
+//        rosteredPlayers:[{name,teamId}] }
 //
 // `owner` is the team's primary manager's real name if ESPN reports one
 // (falls back to their ESPN display name, then null if neither is present —
@@ -14,9 +15,13 @@
 // `scoring` is derived from ESPN's scoringItems (statId -> points-per-unit),
 // keyed by a handful of well-known-but-unofficial stat IDs — only the keys
 // ESPN actually reported are included, so callers should treat missing keys
-// as "unknown" rather than zero. Nothing here is persisted — cookies are
-// forwarded to ESPN for this one request only and never written to storage
-// or logs.
+// as "unknown" rather than zero.
+//
+// `rosteredPlayers` is every player currently on any team's roster (drafted,
+// kept, or added off waivers) — callers match these by name against their
+// own player pool; this endpoint doesn't know that pool. Nothing here is
+// persisted — cookies are forwarded to ESPN for this one request only and
+// never written to storage or logs.
 
 const SLOT_MAP = {'0':'QB','2':'RB','4':'WR','6':'TE','23':'FLEX','16':'DST','17':'K','20':'BN'};
 
@@ -54,7 +59,7 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'Enter a valid season year, e.g. 2026.' });
     }
 
-    const url = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leagues/${leagueId}?view=mSettings&view=mTeam`;
+    const url = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leagues/${leagueId}?view=mSettings&view=mTeam&view=mRoster`;
     const headers = { Accept: 'application/json' };
     if (espnS2 && swid) {
       const swidVal = swid.startsWith('{') ? swid : `{${swid}}`;
@@ -112,12 +117,22 @@ module.exports = async function handler(req, res) {
       if (key && typeof item.points === 'number') scoring[key] = item.points;
     });
 
+    const rosteredPlayers = [];
+    (data.teams || []).forEach(t => {
+      const entries = (t.roster && t.roster.entries) || [];
+      entries.forEach(e => {
+        const player = e.playerPoolEntry && e.playerPoolEntry.player;
+        if (player && player.fullName) rosteredPlayers.push({ name: player.fullName, teamId: t.id });
+      });
+    });
+
     return res.status(200).json({
       leagueName: (data.settings && data.settings.name) || 'ESPN League',
       numTeams: teams.length,
       teams,
       roster,
       scoring,
+      rosteredPlayers,
     });
   } catch (e) {
     console.error('espn import error', e);

@@ -82,11 +82,16 @@ in that browser's `localStorage`).
   "ADP Diff" column shows ADP minus expert rank: positive means the market
   is drafting them later than the expert has them (a value/sleeper),
   negative means earlier (a reach).
-- **Import league rules from ESPN**: pulls team count, roster format, and
-  scoring (points per reception/yard/touchdown) from an existing ESPN league
-  via `api/espn.js` — same best-effort proxy the draft room uses, public or
-  private (with `espn_s2`/`SWID` cookies). Any scoring value ESPN doesn't
-  report is left at its current setting rather than being reset.
+- **Import league rules from ESPN**: pulls team count, roster format,
+  scoring (points per reception/yard/touchdown), and everyone currently
+  rostered (drafted, kept, or added off waivers) from an existing ESPN
+  league via `api/espn.js` — same best-effort proxy the draft room uses,
+  public or private (with `espn_s2`/`SWID` cookies). Any scoring value ESPN
+  doesn't report is left at its current setting rather than being reset.
+  Rostered players are matched by name and marked kept/unavailable — an
+  opt-out checkbox in the import modal, since it only adds to the kept list
+  (never removes from it), but ESPN player names are matched against this
+  app's pool, so double-check the Kept section afterward.
 - **Team Offense tab**: all 32 teams graded A+ through F from the combined
   season projection of their likely starting core (QB1, top 2 RBs, top 3
   WRs, TE1) — a gut-check for skill-position depth, streaming a QB/DST, or
