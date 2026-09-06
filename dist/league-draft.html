@@ -734,6 +734,13 @@ const CFG_KEY = 'league_config';
 const DRAFT_KEY = 'league_draft';
 const ID_KEY = 'my_identity';
 const POLL_MS = 3000;
+// Max attempts if a client loses a compare-and-set race against another
+// browser writing the same DRAFT record at the same instant (drafting a
+// player, adding a keeper). Each retry re-fetches the freshest state and
+// re-validates from scratch, so a losing attempt can never result in a
+// duplicate pick — it either finds a still-valid path forward or bails out
+// with a toast instead of clobbering someone else's write.
+const DRAFT_CAS_MAX_ATTEMPTS = 6;
 
 let CONFIG = null;   // {numTeams, teamNames[], roster:{QB,RB,WR,TE,FLEX,DST,K,BN}, order:[teamIdx,...], createdAt}
 let DRAFT = null;    // {status, overall, picks:[{overall,round,teamIdx,playerId}], claims:{teamIdx:name}, version}
@@ -806,6 +813,11 @@ const API_BASE = 'https://league-draft-app.vercel.app';
 // drives a real room can drive a solo practice draft too.
 function mockKey(key){ return 'mock_' + key; }
 
+// Tracks the exact raw JSON string this browser last saw for each *shared*
+// key, so storageSetCas can ask the server "only write this if nobody else
+// has changed it since I last looked" without a separate round trip.
+const lastRawByKey = {};
+
 async function storageGet(key, shared){
   try{
     if(!shared || MOCK){
@@ -815,6 +827,7 @@ async function storageGet(key, shared){
     const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`);
     if(!res.ok) return null;
     const data = await res.json();
+    lastRawByKey[key] = data.value || null;
     return data.value ? JSON.parse(data.value) : null;
   }catch(e){ return null; }
 }
@@ -824,22 +837,62 @@ async function storageSet(key, value, shared){
       localStorage.setItem(MOCK && shared ? mockKey(key) : key, JSON.stringify(value));
       return {ok:true};
     }
+    const raw = JSON.stringify(value);
     const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({value: JSON.stringify(value)}),
+      body: JSON.stringify({value: raw}),
     });
     if(!res.ok){
       const data = await res.json().catch(()=>({}));
       return {ok:false, error: data.error || `Server returned ${res.status}`};
     }
+    lastRawByKey[key] = raw;
     return {ok:true};
   }catch(e){
     console.error('storage set failed', e);
     return {ok:false, error: (e && e.message) ? e.message : String(e)};
   }
 }
+// Atomic compare-and-set: the write only takes effect if nobody else has
+// changed `key` since this browser last read it (via storageGet). Use this
+// instead of storageSet for any "read the shared state, decide, write it
+// back" action where two people could race — most importantly drafting a
+// player, where two clients could otherwise both read "not yet taken" and
+// both commit a pick for the same player.
+//   - {ok:true} on success.
+//   - {ok:false, conflict:true, current} if someone else wrote first —
+//     `current` is the value that actually won, ready to re-validate against.
+//   - {ok:false, error} on a network/server failure.
+async function storageSetCas(key, value, shared){
+  if(!shared || MOCK){
+    return storageSet(key, value, shared);
+  }
+  try{
+    const expected = Object.prototype.hasOwnProperty.call(lastRawByKey, key) ? lastRawByKey[key] : null;
+    const raw = JSON.stringify(value);
+    const res = await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: raw, expected}),
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.status === 409){
+      lastRawByKey[key] = data.current || null;
+      return {ok:false, conflict:true, current: data.current ? JSON.parse(data.current) : null};
+    }
+    if(!res.ok){
+      return {ok:false, error: data.error || `Server returned ${res.status}`};
+    }
+    lastRawByKey[key] = raw;
+    return {ok:true};
+  }catch(e){
+    console.error('storage cas set failed', e);
+    return {ok:false, error: (e && e.message) ? e.message : String(e)};
+  }
+}
 async function storageDelete(key, shared){
+  delete lastRawByKey[key];
   try{
     if(!shared || MOCK){ localStorage.removeItem(MOCK && shared ? mockKey(key) : key); return; }
     await fetch(`${API_BASE}/api/storage?room=${ROOM_CODE}&key=${key}`, {method:'DELETE'});
@@ -1943,22 +1996,35 @@ function renderKeeperSkipForms(){
 
 document.getElementById('addKeeperBtn').addEventListener('click', async ()=>{
   if(!isCommissioner()){ toast('Only the commissioner can set keepers.'); return; }
-  DRAFT = await storageGet(DRAFT_KEY, true) || DRAFT;
-  if(draftStarted()){ toast('Draft already started — keepers are locked.'); renderKeeperSkipForms(); return; }
-  const teamIdx = parseInt(document.getElementById('keeperTeam').value,10);
-  const playerId = parseInt(document.getElementById('keeperPlayer').value,10);
-  const round = parseInt(document.getElementById('keeperRound').value,10);
-  if(Number.isNaN(teamIdx) || Number.isNaN(playerId) || Number.isNaN(round)){ toast('Fill out all fields.'); return; }
-  const skipSet = getSkipSet();
-  if(skipSet.has(teamIdx+'-'+round)){ toast(`${CONFIG.teamNames[teamIdx]} already has round ${round} spoken for.`); return; }
-  const takenIds = new Set([...DRAFT.picks.map(p=>p.playerId), ...(DRAFT.keepers||[]).map(k=>k.playerId)]);
-  if(takenIds.has(playerId)){ toast('That player is already taken.'); renderKeeperSkipForms(); return; }
-  DRAFT.keepers = DRAFT.keepers || [];
-  DRAFT.keepers.push({teamIdx, playerId, round});
-  DRAFT.version = (DRAFT.version||0)+1;
-  await storageSet(DRAFT_KEY, DRAFT, true);
+  for(let attempt=0; attempt<DRAFT_CAS_MAX_ATTEMPTS; attempt++){
+    DRAFT = await storageGet(DRAFT_KEY, true) || DRAFT;
+    if(draftStarted()){ toast('Draft already started — keepers are locked.'); renderKeeperSkipForms(); return; }
+    const teamIdx = parseInt(document.getElementById('keeperTeam').value,10);
+    const playerId = parseInt(document.getElementById('keeperPlayer').value,10);
+    const round = parseInt(document.getElementById('keeperRound').value,10);
+    if(Number.isNaN(teamIdx) || Number.isNaN(playerId) || Number.isNaN(round)){ toast('Fill out all fields.'); return; }
+    const skipSet = getSkipSet();
+    if(skipSet.has(teamIdx+'-'+round)){ toast(`${CONFIG.teamNames[teamIdx]} already has round ${round} spoken for.`); return; }
+    const takenIds = new Set([...DRAFT.picks.map(p=>p.playerId), ...(DRAFT.keepers||[]).map(k=>k.playerId)]);
+    if(takenIds.has(playerId)){ toast('That player is already taken.'); renderKeeperSkipForms(); return; }
+    const nextDraft = {...DRAFT, keepers: [...(DRAFT.keepers||[]), {teamIdx, playerId, round}], version: (DRAFT.version||0)+1};
+
+    const res = await storageSetCas(DRAFT_KEY, nextDraft, true);
+    if(res.ok){
+      DRAFT = nextDraft;
+      renderKeeperSkipForms();
+      toast('Keeper added.');
+      return;
+    }
+    if(res.conflict){
+      DRAFT = res.current || DRAFT;
+      continue; // someone else changed keepers/picks at the same time — re-check against it
+    }
+    toast('Could not save: ' + (res.error || 'unknown error'));
+    return;
+  }
+  toast("Couldn't save that keeper — try again.");
   renderKeeperSkipForms();
-  toast('Keeper added.');
 });
 
 window.removeKeeper = async function(idx){
@@ -2567,39 +2633,61 @@ function isMyTurn(){
 
 window.userDraft = async function(playerId){
   if(!IDENTITY.name){ toast('Go back to the lobby and enter your name first.'); return; }
-  DRAFT = await storageGet(DRAFT_KEY, true) || DRAFT; // freshest state
-  const sched = buildLiveSchedule();
-  const total = sched.length;
-  if(DRAFT.overall >= total){ toast('Draft is already complete.'); renderAll(); return; }
-  const cur = sched[DRAFT.overall];
-  const orderTeam = cur.teamIdx;
-  const claimant = DRAFT.claims[orderTeam];
-  const canAct = (IDENTITY.teamIdx === orderTeam) || !claimant;
-  if(!canAct){ toast(`It's ${claimant}'s pick.`); renderAll(); return; }
-  if(DRAFT.picks.some(p=>p.playerId===playerId) || (DRAFT.keepers||[]).some(k=>k.playerId===playerId)){
-    toast('That player was just taken.'); renderAll(); return;
-  }
-  const player = PLAYERS_RAW.find(p=>p.id===playerId);
-  const slotIdx = findOpenSlotIndexForPick(orderTeam, player.pos);
-  if(slotIdx===-1){ toast(`${CONFIG.teamNames[orderTeam]}'s roster has no open spot for ${player.pos}.`); return; }
 
-  const overallIdx = DRAFT.overall;
-  DRAFT.picks.push({
-    overall: overallIdx+1, round: cur.round, pickInRound: cur.pickInRound,
-    teamIdx: orderTeam, playerId
-  });
-  DRAFT.overall++;
-  if(DRAFT.overall >= total) DRAFT.status = 'complete';
-  DRAFT.version = (DRAFT.version||0) + 1;
-  await storageSet(DRAFT_KEY, DRAFT, true);
+  for(let attempt=0; attempt<DRAFT_CAS_MAX_ATTEMPTS; attempt++){
+    DRAFT = await storageGet(DRAFT_KEY, true) || DRAFT; // freshest state
+    const sched = buildLiveSchedule();
+    const total = sched.length;
+    if(DRAFT.overall >= total){ toast('Draft is already complete.'); renderAll(); return; }
+    const cur = sched[DRAFT.overall];
+    const orderTeam = cur.teamIdx;
+    const claimant = DRAFT.claims[orderTeam];
+    const canAct = (IDENTITY.teamIdx === orderTeam) || !claimant;
+    if(!canAct){ toast(`It's ${claimant}'s pick.`); renderAll(); return; }
+    if(DRAFT.picks.some(p=>p.playerId===playerId) || (DRAFT.keepers||[]).some(k=>k.playerId===playerId)){
+      toast('That player was just taken.'); renderAll(); return;
+    }
+    const player = PLAYERS_RAW.find(p=>p.id===playerId);
+    const slotIdx = findOpenSlotIndexForPick(orderTeam, player.pos);
+    if(slotIdx===-1){ toast(`${CONFIG.teamNames[orderTeam]}'s roster has no open spot for ${player.pos}.`); return; }
 
-  if(DRAFT.status==='complete'){
-    renderResults();
-    showScreen('results');
-  } else {
+    const overallIdx = DRAFT.overall;
+    const nextDraft = {
+      ...DRAFT,
+      picks: [...DRAFT.picks, {
+        overall: overallIdx+1, round: cur.round, pickInRound: cur.pickInRound,
+        teamIdx: orderTeam, playerId,
+      }],
+      overall: overallIdx+1,
+      version: (DRAFT.version||0) + 1,
+    };
+    if(nextDraft.overall >= total) nextDraft.status = 'complete';
+
+    // Only commits if nobody else has changed the draft since the fetch
+    // above — otherwise two people drafting at the same instant could both
+    // read "not yet taken" and both write a pick for the same player.
+    const res = await storageSetCas(DRAFT_KEY, nextDraft, true);
+    if(res.ok){
+      DRAFT = nextDraft;
+      if(DRAFT.status==='complete'){
+        renderResults();
+        showScreen('results');
+      } else {
+        renderAll();
+        if(MOCK) runBotsUntilUserTurn();
+      }
+      return;
+    }
+    if(res.conflict){
+      DRAFT = res.current || DRAFT;
+      continue; // someone else's write won the race — re-validate against it and retry
+    }
+    toast('Could not save your pick: ' + (res.error || 'unknown error'));
     renderAll();
-    if(MOCK) runBotsUntilUserTurn();
+    return;
   }
+  toast("Couldn't lock in that pick — the draft is moving fast, try again.");
+  renderAll();
 };
 
 /* ---------------- polling ---------------- */
