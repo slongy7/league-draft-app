@@ -97,6 +97,7 @@ const LS = {
   expertRank: LS_PREFIX+'expert_rank_v1',
   scoring: LS_PREFIX+'scoring_v1',
   customOrder: LS_PREFIX+'custom_order_v1',
+  tags: LS_PREFIX+'tags_v1',
 };
 
 function loadJSON(key, fallback){
@@ -114,6 +115,7 @@ const state = {
   expertRank: loadJSON(LS.expertRank, {}), // {playerId: rank} — commissioner-entered FantasyPros ECR (or any expert) rank
   scoring: Object.assign({}, DEFAULT_SCORING, loadJSON(LS.scoring, {})),
   customOrder: loadJSON(LS.customOrder, []), // [playerId,...] — your hand-dragged rank; empty until you first move a player
+  tags: loadJSON(LS.tags, {}), // {playerId: 'target'|'bust'}
   search: '',
   pos: 'ALL',
   team: 'ALL',
@@ -133,6 +135,15 @@ function persistNumTeams(){ saveJSON(LS.numTeams, state.numTeams); }
 function persistExpertRank(){ saveJSON(LS.expertRank, state.expertRank); }
 function persistScoring(){ saveJSON(LS.scoring, state.scoring); }
 function persistCustomOrder(){ saveJSON(LS.customOrder, state.customOrder); }
+function persistTags(){ saveJSON(LS.tags, state.tags); }
+
+function setTag(id, tag){
+  id = Number(id);
+  if(state.tags[id] === tag) delete state.tags[id];
+  else state.tags[id] = tag;
+  persistTags();
+  render();
+}
 
 function esc(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -438,7 +449,9 @@ function renderRow(p, idx, total){
   </td>`;
   row += `<td class="mono">${idx+1}</td>`;
   row += `<td><span class="tier-badge" style="color:${tColor};border-color:${tColor};" title="Tier ${tier} — grouped by where ${esc(p.pos)} talent drops off">T${tier}</span></td>`;
-  row += `<td><div class="player-cell" data-toggle="${p.id}"><span class="pname">${esc(p.name)}${isRemoved?' <span style="color:var(--bad);font-size:11px;">(kept)</span>':''}</span><span class="pmeta">${esc(p.team)} · Bye ${p.bye} · ${esc(p.posRank)} · ADP ${p.adp}</span></div></td>`;
+  const tag = state.tags[p.id];
+  const tagNote = tag==='target' ? ' <span style="color:var(--good);font-size:11px;">(target)</span>' : tag==='bust' ? ' <span style="color:var(--bad);font-size:11px;">(bust)</span>' : '';
+  row += `<td><div class="player-cell" data-toggle="${p.id}"><span class="pname">${esc(p.name)}${isRemoved?' <span style="color:var(--bad);font-size:11px;">(kept)</span>':''}${tagNote}</span><span class="pmeta">${esc(p.team)} · Bye ${p.bye} · ${esc(p.posRank)} · ADP ${p.adp}</span></div></td>`;
   row += `<td><span class="pos-badge" style="${posBadgeStyle(p.pos)}">${esc(p.pos)}</span></td>`;
   row += `<td class="mono">${p.bye}</td>`;
   row += `<td class="num mono">${fmt(computeProjPts(p))}</td>`;
@@ -468,7 +481,11 @@ function renderRow(p, idx, total){
     const val = (state.customValues[p.id]||{})[cs.key];
     row += `<td><input type="text" class="mono custom-input" style="width:70px;" data-id="${p.id}" data-stat="${esc(cs.key)}" value="${esc(val==null?'':val)}"></td>`;
   });
-  row += `<td><button class="kept-btn" data-toggle-kept="${p.id}">${isRemoved?'Restore':'Mark kept'}</button></td>`;
+  row += `<td style="white-space:nowrap;">
+    <button class="tag-btn ${tag==='target'?'tag-active-target':''}" data-tag="target" data-id="${p.id}" title="Mark as a target — someone you like more than consensus">Target</button>
+    <button class="tag-btn ${tag==='bust'?'tag-active-bust':''}" data-tag="bust" data-id="${p.id}" title="Mark as a bust — someone you're fading">Bust</button>
+    <button class="kept-btn" data-toggle-kept="${p.id}">${isRemoved?'Restore':'Mark kept'}</button>
+  </td>`;
   row += `</tr>`;
   if(state.expanded === p.id){
     row += renderDetailRow(p);
@@ -490,6 +507,11 @@ function renderDetailRow(p){
     <div class="cfield"><label>ECR</label><input type="number" class="mono expert-input" data-id="${p.id}" value="${esc(state.expertRank[p.id]==null?'':state.expertRank[p.id])}" placeholder="—"></div>
     <div class="cfield"><label>ECR Diff</label><span class="mono" style="color:${diff==null?'var(--muted-2)':diff>0?'var(--good)':diff<0?'var(--bad)':'var(--muted)'};">${diff==null?'—':(diff>0?'+':'')+diff}</span></div>
   </div>`;
+  const tag = state.tags[p.id];
+  const tagBlock = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">Your take</div>
+    <button class="tag-btn ${tag==='target'?'tag-active-target':''}" data-tag="target" data-id="${p.id}">Target</button>
+    <button class="tag-btn ${tag==='bust'?'tag-active-bust':''}" data-tag="bust" data-id="${p.id}">Bust</button>
+  </div>`;
   let custom = '';
   if(state.customStats.length){
     custom = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">Custom stats</div>` +
@@ -502,6 +524,7 @@ function renderDetailRow(p){
     <div class="detail-grid">${stats}</div>
     <div class="detail-injuries"><strong style="color:var(--muted-2);">Injury notes:</strong> ${esc(injuries)}</div>
     ${ranking}
+    ${tagBlock}
     ${custom}
   </td></tr>`;
 }
@@ -802,13 +825,14 @@ function setExpertRank(id, value){
 
 function exportCsv(){
   const list = visiblePlayers();
-  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','ECR','ECRDiff','MyRank', ...state.customStats.map(cs=>cs.label)];
+  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','ECR','ECRDiff','MyRank','Tag', ...state.customStats.map(cs=>cs.label)];
   const rows = list.map((p,i) => {
     const grade = offenseGrades[p.team] ? offenseGrades[p.team].grade : '';
     const custom = state.customStats.map(cs => (state.customValues[p.id]||{})[cs.key] || '');
     const diff = adpDiff(p);
     const myRankIdx = state.customOrder.indexOf(p.id);
-    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, computeProjPts(p), p.stats.rec||'', grade, state.expertRank[p.id]||'', diff==null?'':diff, myRankIdx===-1?'':myRankIdx+1, ...custom];
+    const tag = state.tags[p.id] || '';
+    return [i+1, tierMap[p.id], p.name, p.pos, p.team, p.bye, computeProjPts(p), p.stats.rec||'', grade, state.expertRank[p.id]||'', diff==null?'':diff, myRankIdx===-1?'':myRankIdx+1, tag, ...custom];
   });
   const csv = [headers, ...rows].map(r => r.map(v => {
     const s = String(v==null?'':v);
@@ -890,6 +914,13 @@ function attachEvents(){
     state.customOrder = [];
     persistCustomOrder();
     if(state.sortKey === 'manual'){ state.sortKey = 'adp'; state.sortDir = 'asc'; }
+    render();
+  });
+  document.getElementById('clearTagsBtn').addEventListener('click', () => {
+    if(!Object.keys(state.tags).length) return;
+    if(!confirm('Clear all Target/Bust tags?')) return;
+    state.tags = {};
+    persistTags();
     render();
   });
 
@@ -995,6 +1026,9 @@ function attachEvents(){
 
     const moveBtn = e.target.closest('[data-move]');
     if(moveBtn && !moveBtn.disabled){ movePlayer(moveBtn.dataset.id, moveBtn.dataset.move==='up' ? -1 : 1); return; }
+
+    const tagBtn = e.target.closest('[data-tag]');
+    if(tagBtn){ setTag(tagBtn.dataset.id, tagBtn.dataset.tag); return; }
 
     const playerCell = e.target.closest('[data-toggle]');
     if(playerCell){
