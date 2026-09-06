@@ -639,7 +639,12 @@ function visiblePlayers(){
     let av, bv;
     if(state.sortKey === 'rec'){ av = (a.stats.rec||0); bv = (b.stats.rec||0); }
     else if(state.sortKey === 'projPts'){ av = computeProjPts(a); bv = computeProjPts(b); }
-    else if(state.sortKey === 'expertRank'){ av = Number(state.expertRank[a.id]) || 0; bv = Number(state.expertRank[b.id]) || 0; }
+    else if(state.sortKey === 'expertRank'){
+      // Unranked players (not on the imported list) sink to the bottom of an
+      // ascending sort instead of floating to the top ahead of rank #1.
+      av = state.expertRank[a.id] != null ? Number(state.expertRank[a.id]) : Infinity;
+      bv = state.expertRank[b.id] != null ? Number(state.expertRank[b.id]) : Infinity;
+    }
     else if(state.sortKey === 'adpDiff'){ av = adpDiff(a) || 0; bv = adpDiff(b) || 0; }
     else if(state.sortKey.startsWith('custom:')){
       const key = state.sortKey.slice(7);
@@ -673,15 +678,15 @@ function renderHead(){
     {key:'rec', label:'Rec'},
     {key:'offense', label:'Off Grade'},
     {key:'fit', label:'Fit'},
-    {key:'expertRank', label:'FP Rk'},
-    {key:'adpDiff', label:'Diff'},
+    {key:'expertRank', label:'ECR'},
+    {key:'adpDiff', label:'ECR Diff'},
   ];
   let html = cols.map(c => {
     if(c.key==='stripe') return `<th style="width:4px;padding:0;"></th>`;
     if(c.key==='sel') return `<th style="width:26px;"></th>`;
     const sorted = state.sortKey===c.key || (c.key==='rank' && state.sortKey==='adp');
-    const title = c.key==='expertRank' ? ' title="FantasyPros ECR (or any expert source) rank — edit inline, or use Import FantasyPros ranks"'
-      : c.key==='adpDiff' ? ' title="ADP minus expert rank. Positive = value (ADP later than expert rank), negative = reach."' : '';
+    const title = c.key==='expertRank' ? ' title="Expert Consensus Ranking (ECR) — edit inline, or use Import FantasyPros ranks"'
+      : c.key==='adpDiff' ? ' title="ADP minus ECR. Green = more valuable pick (ADP later than ECR, a value/sleeper). Red = less valuable pick (ADP earlier than ECR, a reach)."' : '';
     return `<th data-sort="${c.key}" class="${sorted?'sorted':''}"${title}>${esc(c.label)}</th>`;
   }).join('');
   state.customStats.forEach(cs => {
@@ -726,9 +731,9 @@ function renderRow(p, idx){
   if(diff==null){
     row += `<td>—</td>`;
   } else {
-    const tag = diff>3 ? 'priority' : diff<-3 ? 'fade' : 'neutral';
+    const tag = diff>0 ? 'priority' : diff<0 ? 'fade' : 'neutral';
     const sign = diff>0 ? '+' : '';
-    row += `<td><span class="fit-badge fit-${tag}" title="ADP ${p.adp} vs expert rank ${state.expertRank[p.id]}">${sign}${diff}</span></td>`;
+    row += `<td><span class="fit-badge fit-${tag}" title="ADP ${p.adp} vs ECR ${state.expertRank[p.id]}">${sign}${diff}</span></td>`;
   }
   state.customStats.forEach(cs => {
     const val = (state.customValues[p.id]||{})[cs.key];
@@ -751,10 +756,10 @@ function renderDetailRow(p){
   stats += `<div class="detail-stat"><span class="dlabel">Proj Pts</span><span class="dval">${fmt(computeProjPts(p))}</span></div>`;
   const injuries = (p.injuries && p.injuries.length) ? p.injuries.join('; ') : 'No notable injury history on record.';
   const diff = adpDiff(p);
-  const ranking = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">FantasyPros ECR (or any expert) rank</div>
+  const ranking = `<div class="detail-custom"><div class="dlabel" style="margin-bottom:8px;">Expert Consensus Ranking (ECR)</div>
     <div class="cfield"><label>ADP</label><span class="mono" style="color:var(--muted);">${p.adp}</span></div>
-    <div class="cfield"><label>Expert rank</label><input type="number" class="mono expert-input" data-id="${p.id}" value="${esc(state.expertRank[p.id]==null?'':state.expertRank[p.id])}" placeholder="—"></div>
-    <div class="cfield"><label>ADP diff</label><span class="mono" style="color:${diff==null?'var(--muted-2)':diff>3?'var(--good)':diff<-3?'var(--bad)':'var(--muted)'};">${diff==null?'—':(diff>0?'+':'')+diff}</span></div>
+    <div class="cfield"><label>ECR</label><input type="number" class="mono expert-input" data-id="${p.id}" value="${esc(state.expertRank[p.id]==null?'':state.expertRank[p.id])}" placeholder="—"></div>
+    <div class="cfield"><label>ECR Diff</label><span class="mono" style="color:${diff==null?'var(--muted-2)':diff>0?'var(--good)':diff<0?'var(--bad)':'var(--muted)'};">${diff==null?'—':(diff>0?'+':'')+diff}</span></div>
   </div>`;
   let custom = '';
   if(state.customStats.length){
@@ -969,8 +974,17 @@ function importExpertRanksText(text){
   const {matched, unmatched} = parseExpertRanksText(text);
   matched.forEach(m => { state.expertRank[m.id] = m.rank; });
   persistExpertRank();
+  if(matched.length){
+    // The imported list becomes the primary order shown, not just a side
+    // comparison — ADP and the ADP-diff column stay visible per player.
+    state.sortKey = 'expertRank';
+    state.sortDir = 'asc';
+  }
   render();
   let msg = `Imported ${matched.length} of ${matched.length + unmatched.length} lines.`;
+  if(matched.length){
+    msg += ` The Players tab is now sorted by this list — switch the sort anytime by clicking another column header.`;
+  }
   if(unmatched.length){
     msg += `\n\nCouldn't match:\n${unmatched.slice(0,15).join('\n')}${unmatched.length>15 ? '\n…' : ''}`;
   }
@@ -1059,7 +1073,7 @@ function setExpertRank(id, value){
 
 function exportCsv(){
   const list = visiblePlayers();
-  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','ExpertRank','ADPDiff', ...state.customStats.map(cs=>cs.label)];
+  const headers = ['Rank','Tier','Name','Pos','Team','Bye','ProjPts','Rec','OffenseGrade','ECR','ECRDiff', ...state.customStats.map(cs=>cs.label)];
   const rows = list.map((p,i) => {
     const grade = offenseGrades[p.team] ? offenseGrades[p.team].grade : '';
     const custom = state.customStats.map(cs => (state.customValues[p.id]||{})[cs.key] || '');
