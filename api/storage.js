@@ -13,7 +13,7 @@
 //   -> 200 { ok: true }  or  409 { ok:false, conflict:true, current }
 // DELETE /api/storage?room=X&key=Y                     -> { ok: true }
 
-const ALLOWED_KEYS = new Set(['league_config', 'league_draft']);
+const ALLOWED_KEYS = new Set(['league_config', 'league_draft', 'pickem']);
 const ROOM_RE = /^[a-zA-Z0-9]{4,12}$/;
 const MAX_VALUE_LENGTH = 200_000;
 const TTL_SECONDS = 60 * 60 * 24 * 60; // 60 days
