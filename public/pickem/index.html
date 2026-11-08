@@ -88,6 +88,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const uid=()=>Math.random().toString(36).slice(2,9);
 const weeks=()=>{const w=new Set([1,...S.games.map(g=>g.week)]);return [...w].sort((a,b)=>a-b)};
 const weekGames=()=>S.games.filter(g=>g.week==S.week);
+const MAX_PICKS=5;
 const weekLocked=w=>!!S.locks[w];
 const fmtSp=n=>n>0?'+'+n:String(n);
 const spreadOf=(g,side)=>{if(g.spread===''||g.spread==null||isNaN(+g.spread))return '';const n=+g.spread;return ' '+(side=='home'?fmtSp(n):fmtSp(n===0?0:-n))};
@@ -97,7 +98,7 @@ function stats(){
   const r=S.players.map(p=>({name:p,w:0,l:0}));
   for(const g of S.games){
     if(!g.winner)continue;
-    for(const x of r){const pk=(S.picks[g.id]||{})[x.name];if(!pk)x.l++;else if(pk===g.winner)x.w++;else x.l++}
+    for(const x of r){const pk=(S.picks[g.id]||{})[x.name];if(!pk)continue;if(pk===g.winner)x.w++;else x.l++}
   }
   r.forEach(x=>{x.pct=x.w+x.l?x.w/(x.w+x.l):0});
   return r.sort((a,b)=>b.pct-a.pct||b.w-a.w||a.name.localeCompare(b.name));
@@ -130,7 +131,7 @@ function vPicks(){
   if(!S.players.includes(S.me))S.me=S.players[0];
   const gs=weekGames(),open=weekLocked(S.week);
   $('#view').innerHTML=weekBar().replace('</div>',`<label>Player <select id="me">${S.players.map(p=>`<option ${p==S.me?'selected':''}>${esc(p)}</option>`).join('')}</select></label></div>`)+
-  (!open?`<div class="card mute">${gs.length?'Week '+S.week+' isn\'t locked in yet — picks open once the games and spreads are locked on the Games & Setup tab.':'No games this week yet.'}</div>`:gs.length?gs.map(g=>{
+  (open?`<p class="mute" style="margin:0 0 10px"><b>${esc(S.me)}</b> has used <b>${gs.filter(g=>(S.picks[g.id]||{})[S.me]).length} of ${MAX_PICKS}</b> picks this week. Tap a selected team again to undo.</p>`:'')+(!open?`<div class="card mute">${gs.length?'Week '+S.week+' isn\'t locked in yet — picks open once the games and spreads are locked on the Games & Setup tab.':'No games this week yet.'}</div>`:gs.length?gs.map(g=>{
     const pk=(S.picks[g.id]||{})[S.me],lock=isLocked(g);
     const cls=t=>{let c=pk==t?'sel':'';if(g.winner&&pk==t)c=pk==g.winner?'sel right':'sel wrong';return c};
     return `<div class="card game"><div class="meta">${g.kickoff?new Date(g.kickoff).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}):'No kickoff set'}${g.winner?` · Final: ${esc(g.winner)} won`:lock?' · Locked':''}</div>
@@ -139,7 +140,13 @@ function vPicks(){
   bindWeek();
   $('#me').onchange=e=>{S.me=e.target.value;save();render()};
   $('#view').onclick=e=>{const b=e.target.closest('.team');if(!b||b.disabled)return;
-    const g=b.dataset.g,t=b.dataset.t,me=S.me;mutate(d=>{const gm=d.games.find(x=>x.id==g);if(gm&&d.locks[gm.week])(d.picks[g]??={})[me]=t})};
+    const g=b.dataset.g,t=b.dataset.t,me=S.me;
+    if((S.picks[g]||{})[me]!==t&&weekGames().filter(x=>x.id!=g&&(S.picks[x.id]||{})[me]).length>=MAX_PICKS){alert('You\'ve already used all '+MAX_PICKS+' picks this week. Tap a selected team to undo one first.');return}
+    mutate(d=>{const gm=d.games.find(x=>x.id==g);if(!gm||!d.locks[gm.week])return;
+      const pk=d.picks[g]??={};
+      if(pk[me]===t){delete pk[me];return}
+      const used=d.games.filter(x=>x.week==gm.week&&x.id!=g&&(d.picks[x.id]||{})[me]).length;
+      if(used<MAX_PICKS)pk[me]=t})};
 }
 
 function vAll(){
@@ -158,7 +165,7 @@ function vAll(){
 function vRank(){
   const r=stats();
   $('#view').innerHTML=`<div class="card">${r.length?`<table><thead><tr><th>#</th><th>Player</th><th class="num">W</th><th class="num">L</th><th class="num">Win %</th></tr></thead><tbody>${r.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(x.name)}</b></td><td class="num">${x.w}</td><td class="num">${x.l}</td><td class="num">${(x.pct*100).toFixed(1)}%</td></tr>`).join('')}</tbody></table>`:'<span class="mute">No players yet.</span>'}</div>
-  <p class="mute">Ranked by win %, then total wins. A missed pick on a finished game counts as a loss.</p>`;
+  <p class="mute">Ranked by win %, then total wins. Each player picks up to 5 games a week; only games they picked count.</p>`;
 }
 
 function vAdmin(){
