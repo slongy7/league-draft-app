@@ -47,7 +47,10 @@ const SKEY='pickem';
 let S={players:[],games:[],picks:{},locks:{},base:{},room:'',week:1,me:'',tab:'picks'};
 let raw=null,status='';
 try{const l=JSON.parse(localStorage.getItem(LKEY)||'{}');for(const k of['room','me','tab','week'])if(l[k]!==undefined)S[k]=l[k]}catch(e){}
-const h=(location.hash||'').replace('#','').toUpperCase();if(/^[A-Z0-9]{4,12}$/.test(h))S.room=h;
+S.solo='';
+{const m=(location.hash||'').replace('#','').match(/^([A-Za-z0-9]{4,12})(?:\/(.+))?$/);
+ if(m){S.room=m[1].toUpperCase();try{S.solo=m[2]?decodeURIComponent(m[2]):''}catch(e){}}}
+const hashFor=()=>S.room+(S.solo?'/'+encodeURIComponent(S.solo):'');
 const saveLocal=()=>{try{localStorage.setItem(LKEY,JSON.stringify({room:S.room,me:S.me,tab:S.tab,week:S.week}))}catch(e){}};
 const save=saveLocal;
 const apiUrl=()=>`${API}?room=${encodeURIComponent(S.room)}&key=${SKEY}`;
@@ -62,22 +65,23 @@ async function mutate(fn){
   for(let i=0;i<6;i++){
     const d=raw?JSON.parse(raw):{players:[],games:[],picks:{}};
     d.players??=[];d.games??=[];d.picks??={};d.locks??={};d.base??={};
-    fn(d);
+    if(fn(d)===false)return false;
     const next=JSON.stringify(d);
     const res=await fetch(apiUrl(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:next,expected:raw})});
-    if(res.ok){adopt(next);status='';render();return}
+    if(res.ok){adopt(next);status='';render();return true}
     if(res.status===409){adopt((await res.json()).current);continue}
-    status='Could not save ('+res.status+')';render();return;
+    status='Could not save ('+res.status+')';render();return false;
   }
-  status='Too many conflicting edits — try again.';render();
+  status='Too many conflicting edits — try again.';render();return false;
 }
 async function enterRoom(code,create){
-  S.room=code;location.hash=code;saveLocal();raw=null;
+  S.room=code;location.hash=hashFor();saveLocal();raw=null;
   try{
     if(create)await mutate(()=>{});else{await load();if(raw===null){status='No room with that code.';S.room='';location.hash='';saveLocal()}}
   }catch(e){status='Cannot reach the server. ('+e.message+')';S.room=''}
   render();
 }
+setInterval(()=>{if(S.room&&(S.tab==='picks'||S.solo)&&!document.hidden&&!(document.activeElement&&document.activeElement.tagName=='INPUT'))render()},30000);
 setInterval(async()=>{
   if(!S.room||document.hidden)return;
   const a=document.activeElement;if(a&&(a.tagName=='INPUT'))return;
@@ -115,6 +119,14 @@ function vLobby(){
 const tabs=[['picks','Make Picks'],['all','Everyone\'s Picks'],['rank','Standings'],['admin','Games & Setup']];
 function render(){
   if(!S.room){vLobby();return}
+  if(S.solo){
+    $('#nav').innerHTML='';S.me=S.solo;
+    if(!S.players.includes(S.solo)&&raw!==null){$('#view').innerHTML=`<div class="card">No player named <b>${esc(S.solo)}</b> in this room. <a href="#" id="lg">Open the league view</a></div>`;$('#lg').onclick=e=>{e.preventDefault();S.solo='';location.hash=hashFor();render()};return}
+    vPicks();
+    $('#view').insertAdjacentHTML('beforeend',`<p class="mute"><a href="#" id="lg">League view &amp; standings</a>${status?` · <span style="color:var(--loss)">${esc(status)}</span>`:''}</p>`);
+    $('#lg').onclick=e=>{e.preventDefault();S.solo='';location.hash=hashFor();render()};
+    return;
+  }
   $('#nav').innerHTML=tabs.map(([k,l])=>`<button class="${S.tab==k?'on':''}" data-t="${k}">${l}</button>`).join('');
   $('#nav').onclick=e=>{const t=e.target.dataset.t;if(t){S.tab=t;save();render()}};
   ({picks:vPicks,all:vAll,rank:vRank,admin:vAdmin})[S.tab]();
@@ -126,27 +138,53 @@ function weekBar(){
 }
 function bindWeek(){const e=$('#wk');if(e)e.onchange=()=>{S.week=+e.value;save();render()}}
 
+let draft={},dirty=false,draftKey='',notice='';
 function vPicks(){
   if(!S.players.length){$('#view').innerHTML=`<div class="card">Add players first on the <b>Games & Setup</b> tab.</div>`;return}
   if(!S.players.includes(S.me))S.me=S.players[0];
-  const gs=weekGames(),open=weekLocked(S.week);
-  $('#view').innerHTML=weekBar().replace('</div>',`<label>Player <select id="me">${S.players.map(p=>`<option ${p==S.me?'selected':''}>${esc(p)}</option>`).join('')}</select></label></div>`)+
-  (open?`<p class="mute" style="margin:0 0 10px"><b>${esc(S.me)}</b> has used <b>${gs.filter(g=>(S.picks[g.id]||{})[S.me]).length} of ${MAX_PICKS}</b> picks this week. Tap a selected team again to undo.</p>`:'')+(!open?`<div class="card mute">${gs.length?'Week '+S.week+' isn\'t locked in yet — picks open once the games and spreads are locked on the Games & Setup tab.':'No games this week yet.'}</div>`:gs.length?gs.map(g=>{
-    const pk=(S.picks[g.id]||{})[S.me],lock=isLocked(g);
-    const cls=t=>{let c=pk==t?'sel':'';if(g.winner&&g.winner!=='PUSH'&&pk==t)c=pk==g.winner?'sel right':'sel wrong';return c};
-    return `<div class="card game"><div class="meta">${g.kickoff?new Date(g.kickoff).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}):'No kickoff set'}${g.winner?` · Final: ${g.winner==='PUSH'?'Push':esc(g.winner)+' won'}`:lock?' · Locked':''}</div>
+  const gs=weekGames(),open=weekLocked(S.week),me=S.me,key=me+'|'+S.week;
+  if(key!==draftKey){dirty=false;notice='';draftKey=key}
+  if(!dirty){draft={};gs.forEach(g=>{const pk=(S.picks[g.id]||{})[me];if(pk)draft[g.id]=pk})}
+  const count=gs.filter(g=>draft[g.id]).length;
+  const head=S.solo?`<h2 style="margin:0 0 10px">${esc(me)}'s picks</h2>`:'';
+  const bar=weekBar();
+  $('#view').innerHTML=head+(S.solo?bar:bar.replace('</div>',`<label>Player <select id="me">${S.players.map(p=>`<option ${p==me?'selected':''}>${esc(p)}</option>`).join('')}</select></label></div>`))+
+  (!open?`<div class="card mute">${gs.length?'Week '+S.week+' isn\'t locked in yet — picks open once the games and spreads are locked on the Games & Setup tab.':'No games this week yet.'}</div>`:
+  `<p class="mute" style="margin:0 0 10px">Pick up to <b>${MAX_PICKS}</b> games. Picks lock for each game at kickoff. <b>${count} of ${MAX_PICKS}</b> selected${dirty?' — <b>not submitted yet</b>':''}.</p>`+
+  gs.map(g=>{
+    const pk=draft[g.id],lock=isLocked(g),saved=(S.picks[g.id]||{})[me];
+    const cls=t=>{let c=pk==t?'sel':'';if(g.winner&&g.winner!=='PUSH'&&saved==t&&pk==t)c=saved==g.winner?'sel right':'sel wrong';return c};
+    return `<div class="card game"><div class="meta">${g.kickoff?new Date(g.kickoff).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}):'No kickoff set'}${g.winner?` · Final: ${g.winner==='PUSH'?'Push':esc(g.winner)+' won'}`:lock?' · Started — picks locked':''}</div>
       <button class="team ${cls(g.away)}" data-g="${g.id}" data-t="${esc(g.away)}" ${lock?'disabled':''}>${esc(g.away)}${spreadOf(g,'away')}</button><span class="at">at</span>
-      <button class="team ${cls(g.home)}" data-g="${g.id}" data-t="${esc(g.home)}" ${lock?'disabled':''}>${esc(g.home)}${spreadOf(g,'home')}</button></div>`}).join(''):`<div class="card mute">No games this week yet. Add some on the Games & Setup tab.</div>`);
+      <button class="team ${cls(g.home)}" data-g="${g.id}" data-t="${esc(g.home)}" ${lock?'disabled':''}>${esc(g.home)}${spreadOf(g,'home')}</button></div>`}).join('')+
+  `<div class="row"><button class="btn primary" id="sub" ${dirty?'':'disabled'}>Submit picks (${count}/${MAX_PICKS})</button><span class="mute">${esc(notice)}</span></div>`);
   bindWeek();
-  $('#me').onchange=e=>{S.me=e.target.value;save();render()};
+  if($('#me'))$('#me').onchange=e=>{S.me=e.target.value;save();render()};
+  if(!open)return;
   $('#view').onclick=e=>{const b=e.target.closest('.team');if(!b||b.disabled)return;
-    const g=b.dataset.g,t=b.dataset.t,me=S.me;
-    if((S.picks[g]||{})[me]!==t&&weekGames().filter(x=>x.id!=g&&(S.picks[x.id]||{})[me]).length>=MAX_PICKS){alert('You\'ve already used all '+MAX_PICKS+' picks this week. Tap a selected team to undo one first.');return}
-    mutate(d=>{const gm=d.games.find(x=>x.id==g);if(!gm||!d.locks[gm.week])return;
-      const pk=d.picks[g]??={};
-      if(pk[me]===t){delete pk[me];return}
-      const used=d.games.filter(x=>x.week==gm.week&&x.id!=g&&(d.picks[x.id]||{})[me]).length;
-      if(used<MAX_PICKS)pk[me]=t})};
+    const g=weekGames().find(x=>x.id==b.dataset.g),t=b.dataset.t;
+    if(!g||isLocked(g)){alert('That game has already started.');render();return}
+    if(draft[g.id]===t)delete draft[g.id];
+    else{if(!draft[g.id]&&Object.keys(draft).length>=MAX_PICKS){alert('You can pick up to '+MAX_PICKS+' games a week. Tap a selected team to undo one first.');return}draft[g.id]=t}
+    dirty=true;notice='';render()};
+  $('#sub').onclick=async()=>{
+    const snap={...draft},wk=S.week;let skipped=0;
+    const ok=await mutate(d=>{
+      if(!d.locks[wk])return false;
+      skipped=0;const now=new Date(),wg=d.games.filter(g=>g.week==wk);
+      const st=g=>g.winner||(g.kickoff&&new Date(g.kickoff)<=now);
+      const fin={};
+      for(const g of wg){
+        if(st(g)){const pk=(d.picks[g.id]||{})[me];if(pk)fin[g.id]=pk;if(snap[g.id]&&snap[g.id]!==pk)skipped++}
+        else if(snap[g.id]===g.home||snap[g.id]===g.away)fin[g.id]=snap[g.id];
+      }
+      if(Object.keys(fin).length>MAX_PICKS)return false;
+      for(const g of wg){if(st(g))continue;const pk=d.picks[g.id]??={};if(fin[g.id])pk[me]=fin[g.id];else delete pk[me]}
+    });
+    if(ok){dirty=false;notice='Submitted ✓'+(skipped?` (${skipped} pick${skipped>1?'s':''} not saved — game already started)`:'')}
+    else notice='Could not submit — try again.';
+    render();
+  };
 }
 
 function vAll(){
@@ -172,12 +210,12 @@ function vAdmin(){
   const gs=weekGames(),wl=weekLocked(S.week);
   $('#view').innerHTML=`<div class="card"><b>Players &amp; records</b><p class="mute" style="margin:6px 0 10px">Enter each player's record going in. Graded picks are added to it automatically as you set winners each week.</p>
     <div class="row"><input id="np" placeholder="Player name" size="14"><input id="nbw" type="number" min="0" placeholder="W" style="width:70px"><input id="nbl" type="number" min="0" placeholder="L" style="width:70px"><input id="nbp" type="number" min="0" placeholder="P" style="width:70px"><button class="btn primary" id="ap">Add</button></div>
-    ${S.players.map(p=>`<div class="row" style="margin-bottom:6px"><b style="min-width:110px">${esc(p)}</b><label class="mute">W <input data-bw="${esc(p)}" type="number" min="0" value="${(S.base[p]||{}).w||0}" style="width:70px"></label><label class="mute">L <input data-bl="${esc(p)}" type="number" min="0" value="${(S.base[p]||{}).l||0}" style="width:70px"></label><label class="mute">P <input data-bp="${esc(p)}" type="number" min="0" value="${(S.base[p]||{}).p||0}" style="width:70px"></label><a href="#" data-rp="${esc(p)}" style="color:var(--loss);text-decoration:none">✕</a></div>`).join('')||'<span class="mute">None yet</span>'}</div>
+    ${S.players.map(p=>`<div class="row" style="margin-bottom:6px"><b style="min-width:110px">${esc(p)}</b><label class="mute">W <input data-bw="${esc(p)}" type="number" min="0" value="${(S.base[p]||{}).w||0}" style="width:70px"></label><label class="mute">L <input data-bl="${esc(p)}" type="number" min="0" value="${(S.base[p]||{}).l||0}" style="width:70px"></label><label class="mute">P <input data-bp="${esc(p)}" type="number" min="0" value="${(S.base[p]||{}).p||0}" style="width:70px"></label><button class="btn" data-cp="${esc(p)}" style="padding:4px 10px">Copy player link</button><a href="#" data-rp="${esc(p)}" style="color:var(--loss);text-decoration:none">✕</a></div>`).join('')||'<span class="mute">None yet</span>'}</div>
   ${weekBar()}
   <div class="card"><b>Week ${S.week} slate ${wl?'🔒 locked':''}</b>
     <p class="mute" style="margin:6px 0 10px">${wl?'Games and spreads are locked in and picks are open. Unlock to change them.':'Add the games and spreads, then lock the week to open picks.'}</p>
     <button class="btn ${wl?'':'primary'}" id="lk" ${!wl&&!gs.length?'disabled':''}>${wl?'Unlock week':'Lock in games & spreads'}</button></div>
-  ${wl?'':`<div class="card"><b>Add game (Week ${S.week})</b><div class="row" style="margin-top:8px"><input id="ga" placeholder="Away team" size="12"><input id="gh" placeholder="Home team" size="12"><input id="gs" type="number" step="0.5" placeholder="Home spread (e.g. -3.5)" style="width:190px"><input id="gk" type="datetime-local"><button class="btn primary" id="ag">Add</button></div></div>`}
+  ${wl?'':`<div class="card"><b>Add game (Week ${S.week})</b><div class="row" style="margin-top:8px"><input id="ga" placeholder="Away team" size="12"><input id="gh" placeholder="Home team" size="12"><input id="gs" type="number" step="0.5" placeholder="Home spread (e.g. -3.5)" style="width:190px"><input id="gk" type="datetime-local" title="Kickoff (required)"><button class="btn primary" id="ag">Add</button></div></div>`}
   <div class="card">
     <div class="row"><input id="nw" type="number" min="1" placeholder="New week #" style="width:120px"><button class="btn" id="aw">Go to week</button></div></div>
   ${gs.map(g=>`<div class="card"><b>${esc(g.away)} @ ${esc(g.home)}</b><div class="row" style="margin:8px 0 0"><span class="mute">${esc(g.home)} spread:</span><input data-sp="${g.id}" type="number" step="0.5" value="${g.spread??''}" style="width:90px" ${wl?'disabled':''}><span class="mute">Winner:</span>
@@ -187,10 +225,12 @@ function vAdmin(){
   $('#ap').onclick=()=>{const v=$('#np').value.trim();const bw=Math.max(0,parseInt($('#nbw').value)||0),bl=Math.max(0,parseInt($('#nbl').value)||0),bp=Math.max(0,parseInt($('#nbp').value)||0);if(v&&!S.players.includes(v))mutate(d=>{if(!d.players.includes(v)){d.players.push(v);d.base[v]={w:bw,l:bl,p:bp}}})};
   $('#np').onkeydown=e=>{if(e.key=='Enter')$('#ap').click()};
   $('#lk').onclick=()=>{const w=S.week;mutate(d=>{if(d.locks[w])delete d.locks[w];else d.locks[w]=true})};
-  if($('#ag'))$('#ag').onclick=()=>{const a=$('#ga').value.trim(),h=$('#gh').value.trim();if(!a||!h)return;
+  if($('#ag'))$('#ag').onclick=()=>{const a=$('#ga').value.trim(),h=$('#gh').value.trim();if(!a||!h||!$('#gk').value){alert('Enter both teams and a kickoff time — picks lock at kickoff.');return}
     const gm={id:uid(),week:S.week,away:a,home:h,spread:$('#gs').value,kickoff:$('#gk').value||'',winner:''};mutate(d=>{if(!d.locks[gm.week])d.games.push(gm)})};
   $('#aw').onclick=()=>{const w=+$('#nw').value;if(w>0){S.week=w;save();render()}};
   $('#view').onclick=e=>{
+    const cp=e.target.dataset.cp;if(cp){const u=location.origin+location.pathname+'#'+S.room+'/'+encodeURIComponent(cp);
+      (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>{e.target.textContent='Copied ✓'}).catch(()=>prompt('Copy this link for '+cp,u))}
     const rp=e.target.dataset.rp;if(rp!==undefined){e.preventDefault();if(confirm('Remove '+rp+' and their picks?'))mutate(d=>{d.players=d.players.filter(p=>p!=rp);delete d.base[rp];for(const k in d.picks)delete d.picks[k][rp]})}
     const dg=e.target.dataset.dg;if(dg&&confirm('Delete this game?'))mutate(d=>{const g=d.games.find(g=>g.id==dg);if(g&&d.locks[g.week])return;d.games=d.games.filter(g=>g.id!=dg);delete d.picks[dg]})};
   $('#view').onchange=e=>{const t=e.target.dataset;const bk=t.bw??t.bl??t.bp;if(bk!==undefined){const k=t.bw!==undefined?'w':t.bl!==undefined?'l':'p',v=Math.max(0,parseInt(e.target.value)||0);mutate(d=>{(d.base[bk]??={w:0,l:0,p:0})[k]=v});return}const sp=e.target.dataset.sp;if(sp){const v=e.target.value;mutate(d=>{const g=d.games.find(g=>g.id==sp);if(g&&!d.locks[g.week])g.spread=v})}const w=e.target.dataset.w;if(w){const v=e.target.value;mutate(d=>{const g=d.games.find(g=>g.id==w);if(g)g.winner=v})}};
