@@ -44,14 +44,14 @@ const LKEY='pickem-local-v1';
 const API='/api/storage';
 const SKEY='pickem';
 // Shared (server): players, games, picks. Local (this device): room, me, tab, week.
-let S={players:[],games:[],picks:{},room:'',week:1,me:'',tab:'picks'};
+let S={players:[],games:[],picks:{},locks:{},room:'',week:1,me:'',tab:'picks'};
 let raw=null,status='';
 try{const l=JSON.parse(localStorage.getItem(LKEY)||'{}');for(const k of['room','me','tab','week'])if(l[k]!==undefined)S[k]=l[k]}catch(e){}
 const h=(location.hash||'').replace('#','').toUpperCase();if(/^[A-Z0-9]{4,12}$/.test(h))S.room=h;
 const saveLocal=()=>{try{localStorage.setItem(LKEY,JSON.stringify({room:S.room,me:S.me,tab:S.tab,week:S.week}))}catch(e){}};
 const save=saveLocal;
 const apiUrl=()=>`${API}?room=${encodeURIComponent(S.room)}&key=${SKEY}`;
-function adopt(r){raw=r;const d=r?JSON.parse(r):{};S.players=d.players||[];S.games=d.games||[];S.picks=d.picks||{}}
+function adopt(r){raw=r;const d=r?JSON.parse(r):{};S.players=d.players||[];S.games=d.games||[];S.picks=d.picks||{};S.locks=d.locks||{}}
 async function load(){
   const res=await fetch(apiUrl());if(!res.ok)throw new Error('Server error '+res.status);
   const {value}=await res.json();
@@ -61,7 +61,7 @@ async function load(){
 async function mutate(fn){
   for(let i=0;i<6;i++){
     const d=raw?JSON.parse(raw):{players:[],games:[],picks:{}};
-    d.players??=[];d.games??=[];d.picks??={};
+    d.players??=[];d.games??=[];d.picks??={};d.locks??={};
     fn(d);
     const next=JSON.stringify(d);
     const res=await fetch(apiUrl(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:next,expected:raw})});
@@ -88,6 +88,9 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const uid=()=>Math.random().toString(36).slice(2,9);
 const weeks=()=>{const w=new Set([1,...S.games.map(g=>g.week)]);return [...w].sort((a,b)=>a-b)};
 const weekGames=()=>S.games.filter(g=>g.week==S.week);
+const weekLocked=w=>!!S.locks[w];
+const fmtSp=n=>n>0?'+'+n:String(n);
+const spreadOf=(g,side)=>{if(g.spread===''||g.spread==null||isNaN(+g.spread))return '';const n=+g.spread;return ' '+(side=='home'?fmtSp(n):fmtSp(n===0?0:-n))};
 const isLocked=g=>!!g.winner||(g.kickoff&&new Date(g.kickoff)<=new Date());
 
 function stats(){
@@ -125,18 +128,18 @@ function bindWeek(){const e=$('#wk');if(e)e.onchange=()=>{S.week=+e.value;save()
 function vPicks(){
   if(!S.players.length){$('#view').innerHTML=`<div class="card">Add players first on the <b>Games & Setup</b> tab.</div>`;return}
   if(!S.players.includes(S.me))S.me=S.players[0];
-  const gs=weekGames();
+  const gs=weekGames(),open=weekLocked(S.week);
   $('#view').innerHTML=weekBar().replace('</div>',`<label>Player <select id="me">${S.players.map(p=>`<option ${p==S.me?'selected':''}>${esc(p)}</option>`).join('')}</select></label></div>`)+
-  (gs.length?gs.map(g=>{
+  (!open?`<div class="card mute">${gs.length?'Week '+S.week+' isn\'t locked in yet — picks open once the games and spreads are locked on the Games & Setup tab.':'No games this week yet.'}</div>`:gs.length?gs.map(g=>{
     const pk=(S.picks[g.id]||{})[S.me],lock=isLocked(g);
     const cls=t=>{let c=pk==t?'sel':'';if(g.winner&&pk==t)c=pk==g.winner?'sel right':'sel wrong';return c};
     return `<div class="card game"><div class="meta">${g.kickoff?new Date(g.kickoff).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}):'No kickoff set'}${g.winner?` · Final: ${esc(g.winner)} won`:lock?' · Locked':''}</div>
-      <button class="team ${cls(g.away)}" data-g="${g.id}" data-t="${esc(g.away)}" ${lock?'disabled':''}>${esc(g.away)}</button><span class="at">at</span>
-      <button class="team ${cls(g.home)}" data-g="${g.id}" data-t="${esc(g.home)}" ${lock?'disabled':''}>${esc(g.home)}</button></div>`}).join(''):`<div class="card mute">No games this week yet. Add some on the Games & Setup tab.</div>`);
+      <button class="team ${cls(g.away)}" data-g="${g.id}" data-t="${esc(g.away)}" ${lock?'disabled':''}>${esc(g.away)}${spreadOf(g,'away')}</button><span class="at">at</span>
+      <button class="team ${cls(g.home)}" data-g="${g.id}" data-t="${esc(g.home)}" ${lock?'disabled':''}>${esc(g.home)}${spreadOf(g,'home')}</button></div>`}).join(''):`<div class="card mute">No games this week yet. Add some on the Games & Setup tab.</div>`);
   bindWeek();
   $('#me').onchange=e=>{S.me=e.target.value;save();render()};
   $('#view').onclick=e=>{const b=e.target.closest('.team');if(!b||b.disabled)return;
-    const g=b.dataset.g,t=b.dataset.t,me=S.me;mutate(d=>{(d.picks[g]??={})[me]=t})};
+    const g=b.dataset.g,t=b.dataset.t,me=S.me;mutate(d=>{const gm=d.games.find(x=>x.id==g);if(gm&&d.locks[gm.week])(d.picks[g]??={})[me]=t})};
 }
 
 function vAll(){
@@ -159,25 +162,30 @@ function vRank(){
 }
 
 function vAdmin(){
-  const gs=weekGames();
+  const gs=weekGames(),wl=weekLocked(S.week);
   $('#view').innerHTML=`<div class="card"><b>Players</b><div class="row" style="margin-top:8px"><input id="np" placeholder="Player name"><button class="btn primary" id="ap">Add</button></div>
     <div>${S.players.map(p=>`<span class="btn" style="display:inline-block;margin:0 6px 6px 0">${esc(p)} <a href="#" data-rp="${esc(p)}" style="color:var(--loss);text-decoration:none">✕</a></span>`).join('')||'<span class="mute">None yet</span>'}</div></div>
   ${weekBar()}
-  <div class="card"><b>Add game (Week ${S.week})</b><div class="row" style="margin-top:8px"><input id="ga" placeholder="Away team" size="12"><input id="gh" placeholder="Home team" size="12"><input id="gk" type="datetime-local"><button class="btn primary" id="ag">Add</button></div>
+  <div class="card"><b>Week ${S.week} slate ${wl?'🔒 locked':''}</b>
+    <p class="mute" style="margin:6px 0 10px">${wl?'Games and spreads are locked in and picks are open. Unlock to change them.':'Add the games and spreads, then lock the week to open picks.'}</p>
+    <button class="btn ${wl?'':'primary'}" id="lk" ${!wl&&!gs.length?'disabled':''}>${wl?'Unlock week':'Lock in games & spreads'}</button></div>
+  ${wl?'':`<div class="card"><b>Add game (Week ${S.week})</b><div class="row" style="margin-top:8px"><input id="ga" placeholder="Away team" size="12"><input id="gh" placeholder="Home team" size="12"><input id="gs" type="number" step="0.5" placeholder="Home spread (e.g. -3.5)" style="width:190px"><input id="gk" type="datetime-local"><button class="btn primary" id="ag">Add</button></div></div>`}
+  <div class="card">
     <div class="row"><input id="nw" type="number" min="1" placeholder="New week #" style="width:120px"><button class="btn" id="aw">Go to week</button></div></div>
-  ${gs.map(g=>`<div class="card"><b>${esc(g.away)} @ ${esc(g.home)}</b><div class="row" style="margin:8px 0 0"><span class="mute">Winner:</span>
+  ${gs.map(g=>`<div class="card"><b>${esc(g.away)} @ ${esc(g.home)}</b><div class="row" style="margin:8px 0 0"><span class="mute">${esc(g.home)} spread:</span><input data-sp="${g.id}" type="number" step="0.5" value="${g.spread??''}" style="width:90px" ${wl?'disabled':''}><span class="mute">Winner:</span>
     <select data-w="${g.id}"><option value="">— not final —</option><option ${g.winner==g.away?'selected':''}>${esc(g.away)}</option><option ${g.winner==g.home?'selected':''}>${esc(g.home)}</option></select>
-    <button class="btn" data-dg="${g.id}">Delete</button></div></div>`).join('')}`;
+    ${wl?'':`<button class="btn" data-dg="${g.id}">Delete</button>`}</div></div>`).join('')}`;
   bindWeek();
   $('#ap').onclick=()=>{const v=$('#np').value.trim();if(v&&!S.players.includes(v))mutate(d=>{if(!d.players.includes(v))d.players.push(v)})};
   $('#np').onkeydown=e=>{if(e.key=='Enter')$('#ap').click()};
-  $('#ag').onclick=()=>{const a=$('#ga').value.trim(),h=$('#gh').value.trim();if(!a||!h)return;
-    const gm={id:uid(),week:S.week,away:a,home:h,kickoff:$('#gk').value||'',winner:''};mutate(d=>{d.games.push(gm)})};
+  $('#lk').onclick=()=>{const w=S.week;mutate(d=>{if(d.locks[w])delete d.locks[w];else d.locks[w]=true})};
+  if($('#ag'))$('#ag').onclick=()=>{const a=$('#ga').value.trim(),h=$('#gh').value.trim();if(!a||!h)return;
+    const gm={id:uid(),week:S.week,away:a,home:h,spread:$('#gs').value,kickoff:$('#gk').value||'',winner:''};mutate(d=>{if(!d.locks[gm.week])d.games.push(gm)})};
   $('#aw').onclick=()=>{const w=+$('#nw').value;if(w>0){S.week=w;save();render()}};
   $('#view').onclick=e=>{
     const rp=e.target.dataset.rp;if(rp!==undefined){e.preventDefault();if(confirm('Remove '+rp+' and their picks?'))mutate(d=>{d.players=d.players.filter(p=>p!=rp);for(const k in d.picks)delete d.picks[k][rp]})}
-    const dg=e.target.dataset.dg;if(dg&&confirm('Delete this game?'))mutate(d=>{d.games=d.games.filter(g=>g.id!=dg);delete d.picks[dg]})};
-  $('#view').onchange=e=>{const w=e.target.dataset.w;if(w){const v=e.target.value;mutate(d=>{const g=d.games.find(g=>g.id==w);if(g)g.winner=v})}};
+    const dg=e.target.dataset.dg;if(dg&&confirm('Delete this game?'))mutate(d=>{const g=d.games.find(g=>g.id==dg);if(g&&d.locks[g.week])return;d.games=d.games.filter(g=>g.id!=dg);delete d.picks[dg]})};
+  $('#view').onchange=e=>{const sp=e.target.dataset.sp;if(sp){const v=e.target.value;mutate(d=>{const g=d.games.find(g=>g.id==sp);if(g&&!d.locks[g.week])g.spread=v})}const w=e.target.dataset.w;if(w){const v=e.target.value;mutate(d=>{const g=d.games.find(g=>g.id==w);if(g)g.winner=v})}};
 }
 if(S.room)enterRoom(S.room,false);else render();
 </script>
